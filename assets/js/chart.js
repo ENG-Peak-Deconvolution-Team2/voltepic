@@ -39,6 +39,7 @@ export function createSignalChart(svg, wrap) {
     </defs>`;
   const gGrid = node("g", { class: "grid" }, svg);
   const gRegions = node("g", { class: "regions", "clip-path": "url(#plotClip)" }, svg);
+  const gWindow = node("g", { class: "peakwin" }, svg);
   const gRegionLabel = node("g", {}, svg);
   const gAxes = node("g", { class: "axes" }, svg);
   const area = node("path", { class: "area-den", "clip-path": "url(#plotClip)" }, svg);
@@ -54,7 +55,7 @@ export function createSignalChart(svg, wrap) {
   function scales() {
     const w = wrap.clientWidth;
     const h = wrap.clientHeight;
-    const m = { l: 54, r: 14, t: 30, b: 36 };
+    const m = { l: 54, r: 14, t: 36, b: 36 };
     const series = [];
     if (state.layers.raw) series.push(state.raw);
     if (state.layers.denoised && state.denoised) series.push(state.denoised);
@@ -123,7 +124,22 @@ export function createSignalChart(svg, wrap) {
     const lx = edge === "start" ? cx - 4 : edge === "end" ? cx + 4 : cx;
     const label = node("text", { class: "region-label", x: lx, y: h - m.b - 8, "text-anchor": edge }, gRegionLabel);
     label.style.fill = `var(${top.value >= 0 ? "--pos" : "--neg"})`;
-    label.textContent = `${r.scale === "logit" ? "log-odds" : "P"} ${top.value >= 0 ? "−" : "+"}${Math.abs(top.value).toFixed(2)}`;
+    const sign = r.method === "shap" ? (top.value >= 0 ? "+" : "−") : (top.value >= 0 ? "−" : "+");
+    label.textContent = r.method === "pfi" ? "PFI · most important window" : `${r.scale === "logit" ? "log-odds" : "P"} ${sign}${Math.abs(top.value).toFixed(2)}`;
+  }
+
+  function drawWindow(g) {
+    gWindow.replaceChildren();
+    const w = state.peakWindow;
+    if (!w) return;
+    const { m, h, sx } = g;
+    const x0 = sx(w.lo);
+    const x1 = sx(w.hi);
+    const rect = node("rect", { x: x0, y: m.t, width: Math.max(2, x1 - x0), height: h - m.t - m.b, rx: 4 }, gWindow);
+    rect.style.stroke = `var(${w.color})`;
+    const label = node("text", { x: (x0 + x1) / 2, y: m.t - 6, "text-anchor": "middle" }, gWindow);
+    label.style.fill = `var(${w.color})`;
+    label.textContent = w.label;
   }
 
   function drawPeak(g) {
@@ -159,6 +175,7 @@ export function createSignalChart(svg, wrap) {
     svg.setAttribute("viewBox", `0 0 ${geom.w} ${geom.h}`);
     drawAxes(geom);
     drawRegions(geom);
+    drawWindow(geom);
     const { sx, sy, h, m } = geom;
     const E = state.E;
     lineRaw.setAttribute("d", state.layers.raw ? pathOf(E, state.raw, sx, sy) : "");
@@ -200,7 +217,10 @@ export function createSignalChart(svg, wrap) {
     put(dots[2], state.layers.blank && !!state.blank, state.blank, "--blank", "Blank");
     const unit = state.layers.xai && state.regions?.units?.find((u) => k >= u.i0 && k < u.i1);
     if (unit) {
-      rows.push(`<div class="tt-r"><span><i style="--c:var(${unit.value >= 0 ? "--pos" : "--neg"})"></i>Masking · ${esc(state.regions.label)}</span><b>${state.regions.scale === "logit" ? "log-odds" : "P"} ${unit.value >= 0 ? "−" : "+"}${Math.abs(unit.value).toFixed(2)}</b></div>`);
+      const shap = state.regions.method === "shap";
+      const sign = shap ? (unit.value >= 0 ? "+" : "−") : (unit.value >= 0 ? "−" : "+");
+      if (state.regions.method === "pfi") rows.push(`<div class="tt-r"><span><i style="--c:var(--pos)"></i>PFI · ${esc(state.regions.label)}</span><b>Δ log-loss ${unit.value.toFixed(4)}</b></div>`);
+      else rows.push(`<div class="tt-r"><span><i style="--c:var(${unit.value >= 0 ? "--pos" : "--neg"})"></i>${shap ? "SHAP" : "Masking"} · ${esc(state.regions.label)}</span><b>${state.regions.scale === "logit" ? "log-odds" : "P"} ${sign}${Math.abs(unit.value).toFixed(2)}</b></div>`);
     }
     xhair.setAttribute("visibility", "visible");
     showTip(`<div class="tt-h">${E[k].toFixed(3)} V · point ${k + 1}/200</div>${rows.join("")}`, ev.clientX, ev.clientY);
@@ -296,7 +316,7 @@ export function stripChart(svg, analytes, libProbs, current, thresholds, labelsO
 }
 
 /** Occlusion heat strip: one row per analyte, one cell per window, diverging colour. */
-export function heatChart(svg, analytes, occ, E, selected, onSelect, scale = "logit") {
+export function heatChart(svg, analytes, occ, E, selected, onSelect, scale = "logit", windows = {}) {
   const w = svg.clientWidth || 600;
   const rowH = 26;
   const m = { l: 92, r: 8, t: 4, b: 24 };
@@ -314,8 +334,16 @@ export function heatChart(svg, analytes, occ, E, selected, onSelect, scale = "lo
       const v = u[key][k] / max;
       const e0 = E[u.i0] - 0.002;
       const e1 = E[u.i1 - 1] + 0.002;
-      out += `<rect class="cell" x="${(m.l + j * cw + 0.5).toFixed(2)}" y="${y + 3}" width="${Math.max(1, cw - 1.5).toFixed(2)}" height="${rowH - 6}" rx="3" style="fill:${diverging(v)};animation-delay:${(j * 6 + k * 30)}ms" data-tip="<div class='tt-h'>${e0.toFixed(3)}–${e1.toFixed(3)} V · ${esc(a.name)}</div><div class='tt-r'><span>P(present)</span><b>${occ.base[k].toFixed(3)} → ${(occ.base[k] - u.dp[k]).toFixed(3)}</b></div><div class='tt-r'><span>Log-odds change</span><b>${u.dlogit[k] >= 0 ? "−" : "+"}${Math.abs(u.dlogit[k]).toFixed(2)}</b></div>"/>`;
+      out += `<rect class="cell" x="${(m.l + j * cw + 0.5).toFixed(2)}" y="${y + 3}" width="${Math.max(1, cw - 1.5).toFixed(2)}" height="${rowH - 6}" rx="3" style="fill:${diverging(v)};animation-delay:${(j * 6 + k * 30)}ms" data-tip="<div class='tt-h'>${e0.toFixed(3)}–${e1.toFixed(3)} V · ${esc(a.name)}</div>${occ.method === "shap"
+        ? `<div class='tt-r'><span>SHAP, log-odds</span><b>${u.dlogit[k] >= 0 ? "+" : "−"}${Math.abs(u.dlogit[k]).toFixed(2)}</b></div><div class='tt-r'><span>SHAP, P</span><b>${u.dp[k] >= 0 ? "+" : "−"}${Math.abs(u.dp[k]).toFixed(3)}</b></div>`
+        : `<div class='tt-r'><span>P(present)</span><b>${occ.base[k].toFixed(3)} → ${(occ.base[k] - u.dp[k]).toFixed(3)}</b></div><div class='tt-r'><span>Log-odds change</span><b>${u.dlogit[k] >= 0 ? "−" : "+"}${Math.abs(u.dlogit[k]).toFixed(2)}</b></div>`}"/>`;
     });
+    const win = windows[k];
+    if (win) {
+      const x0 = m.l + ((win.lo - (E[0] - 0.002)) / 0.8) * (w - m.l - m.r);
+      const x1 = m.l + ((win.hi - (E[0] - 0.002)) / 0.8) * (w - m.l - m.r);
+      out += `<rect class="win" x="${x0.toFixed(1)}" y="${y + 1.5}" width="${(x1 - x0).toFixed(1)}" height="${rowH - 3}" rx="5" style="stroke:var(--a${k})"/>`;
+    }
     out += `<rect class="row-hit" data-row="${k}" x="0" y="${y}" width="${m.l - 4}" height="${rowH}"/>`;
   });
   for (const v of [0, 0.2, 0.4, 0.6, 0.8]) {
@@ -333,17 +361,24 @@ export function heatChart(svg, analytes, occ, E, selected, onSelect, scale = "lo
 }
 
 /** Mean |Δp| per window across the library, one line per analyte, direct-labelled at the peak. */
-export function profileChart(svg, analytes, profile, centers) {
+export function profileChart(svg, analytes, profile, centers, windows = []) {
   const w = svg.clientWidth || 400;
-  const h = 190;
-  const m = { l: 40, r: 10, t: 14, b: 24 };
+  const hasWin = windows.some(Boolean);
+  const h = hasWin ? 222 : 190;
+  const m = { l: 40, r: 10, t: 14, b: hasWin ? 56 : 24 };
   const max = Math.max(1e-9, ...profile.flat());
   const y = niceTicks(0, max, 4);
   const sx = (v) => m.l + (v / 0.8) * (w - m.l - m.r);
   const sy = (v) => h - m.b - (v / y.hi) * (h - m.t - m.b);
   let out = "";
   for (const t of y.ticks) out += `<line x1="${m.l}" x2="${w - m.r}" y1="${sy(t)}" y2="${sy(t)}" style="stroke:var(--grid)"/><text x="${m.l - 6}" y="${sy(t) + 3}" text-anchor="end">${+t.toFixed(3)}</text>`;
-  for (const v of [0, 0.2, 0.4, 0.6, 0.8]) out += `<text x="${sx(v)}" y="${h - 6}" text-anchor="middle">${v.toFixed(1)}</text>`;
+  for (const v of [0, 0.2, 0.4, 0.6, 0.8]) out += `<text x="${sx(v)}" y="${h - m.b + 16}" text-anchor="middle">${v.toFixed(1)}</text>`;
+  windows.forEach((win, k) => {
+    if (!win) return;
+    const y = h - m.b + 24 + k * 7;
+    out += `<rect x="${sx(win.lo)}" y="${y}" width="${Math.max(2, sx(win.hi) - sx(win.lo))}" height="4" rx="2" style="fill:var(--a${k})" data-tip="<div class='tt-h'>${esc(analytes[k].name)} · E3 peak window</div><div class='tt-r'><span>${win.lo.toFixed(3)}–${win.hi.toFixed(3)} V</span><b>peak ${win.center.toFixed(3)} V</b></div>"/>`;
+    out += `<line x1="${sx(win.center)}" x2="${sx(win.center)}" y1="${y - 2}" y2="${y + 6}" style="stroke:var(--ink);stroke-width:1.5"/>`;
+  });
   analytes.forEach((a, k) => {
     const d = profile[k].map((v, j) => `${j ? "L" : "M"}${sx(centers[j]).toFixed(1)},${sy(v).toFixed(1)}`).join("");
     out += `<path class="line" d="${d}" style="stroke:var(--a${k})"/>`;

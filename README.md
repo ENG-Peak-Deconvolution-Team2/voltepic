@@ -15,7 +15,7 @@ ENG Peak Deconvolution project · Team 2 (machine learning) · work package 6, w
 | 01 Measurement | Acquisition settings (read from the CHI760F header when you upload a raw file), sample metadata, peaks found on the denoised trace, wavelet noise estimate |
 | 02 Preprocess | The training pipeline recomputed for this curve: sym4 wavelet denoising → rbio1.3 DWT (228 coefficients) → standardisation, with the removed noise and the coefficient profile |
 | 03 Detect | Four independent present/absent decisions with probability, threshold and log-odds margin; where the curve sits among the 125 held-out curves |
-| 04 Explain | Occlusion: every 20 or 40 mV window is masked in turn and the curve re-scored; per-analyte map, the windows that matter shaded on the graph, wavelet-band gain, and the same profile averaged over the whole library |
+| 04 Explain | Built from the ENG WP5 XAI run, choosing what landed on the peaks in its tests: the graph shades where the model looks (grouped PFI of this exact model, the most reliable method in the 2026-10-11 results) next to the E3 peak window; per-curve KernelSHAP with the blank reference (R2), the best local method on the E3 peak test; live occlusion (R1 / R0 / R3) for uploaded curves; wavelet-band gain |
 
 The **analysis assistant** is a placeholder: its answers are composed by rules from the current
 analysis. `assets/js/assistant.js` → `respond()` is where a language-model call will go.
@@ -63,7 +63,9 @@ assets/js/assistant.js     demo assistant
 assets/js/engine/          wavelet transform, model, occlusion
 data/model.json            exported model
 data/library.json          held-out curves, metadata, mean blanks, Python reference scores
-tools/export_model.py      regenerates data/ from the research workspace (needs the campaign code)
+data/xai.json              XAI run results for this model: per-curve SHAP (R2), PFI, E3 windows, test numbers
+tools/export_model.py      regenerates model.json / library.json from the research workspace
+tools/export_xai.py        regenerates xai.json; checks that the run's rows and model are the site's
 tools/parity.mjs           JS ↔ Python parity test
 ```
 

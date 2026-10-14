@@ -15,8 +15,8 @@ const S = {
   model: null, modelJson: null, library: null,
   libResults: [], bench: null, parity: null,
   sample: null, qc: null, result: null, occ: null,
-  xai: { width: 5, fill: "R3", scale: "logit", analyte: 0 },
-  global: new Map(),
+  xai: { method: "shap", shade: "pfi", width: 5, fill: "R1", scale: "logit", analyte: 0, polymer: "PVDF" },
+  xaiData: null,
   step: "measure",
   done: new Set(),
   layers: { raw: true, denoised: true, blank: false, xai: true },
@@ -29,7 +29,7 @@ const assistant = createAssistant({
   log: $("#chatLog"), suggest: $("#chatSuggest"), form: $("#chatForm"), input: $("#chatText"),
   ctx: () => ({
     result: S.result, occ: S.occ, qc: S.qc, analytes: S.model?.analytes ?? [], thresholds: S.model?.thresholds ?? [],
-    E, widthMv: S.xai.width * 4, labels: S.sample?.labels ?? null, bench: S.bench,
+    E, widthMv: S.xai.width * 4, labels: S.sample?.labels ?? null, bench: S.bench, peakWindow,
   }),
   actions: { explain: () => explain({ quiet: true }) },
 });
@@ -57,6 +57,8 @@ async function boot() {
     $("#chartEmpty").innerHTML = `<span>Could not load the model: ${esc(err.message)}</span>`;
     return;
   }
+  // XAI run results (SHAP R2, PFI, E3 windows) for this model; the page works without them.
+  try { S.xaiData = await fetchJson("data/xai.json"); } catch { S.xaiData = null; }
   // Score the held-out library once: benchmark, reference check and the Detect strip all read it.
   const t0 = performance.now();
   S.libResults = S.library.map((s) => S.model.score(s.I).probs);
@@ -69,7 +71,7 @@ async function boot() {
   $(".model-pill-text").textContent = "Model ready";
   $("#resThr").textContent = `threshold ≈ ${S.model.thresholds[0].toFixed(2)}`;
   renderLibrary();
-  const featured = S.library.find((s) => s.file === "20250623_MC325_SWV_Ch1_Ch2_1000nM2E_70nM5HT_1.txt") ?? S.library[0];
+  const featured = S.library.find((s) => s.file === "20250625_MC325_SWV_Ch1_Ch2_100nM2E_2uMAA_10nMMela_1.txt") ?? S.library[0];
   await selectSample(featured, { silent: true });
   await analyze({ fast: false });
   await explain({ quiet: true });
@@ -126,6 +128,9 @@ function markLibrarySelection() {
 async function selectSample(sample, { silent = false } = {}) {
   S.sample = sample;
   S.xaiPicked = false;
+  if (sample.polymer) S.xai.polymer = sample.polymer;
+  // SHAP comes from the XAI run, so it exists for library curves only
+  S.xai.method = sample.source === "library" && S.xaiData ? (S.xai.userMethod ?? "shap") : "occlusion";
   S.result = null;
   S.occ = null;
   S.done = new Set(["measure"]);
@@ -261,10 +266,14 @@ async function explain({ quiet = false } = {}) {
   btn.classList.add("busy");
   setStepState("explain", "running");
   await nextFrame();
-  const reference = S.xai.fill === "R1" ? S.model.r1[S.sample.polymer] : null;
-  if (S.xai.fill === "R1" && !reference) { S.xai.fill = "R3"; toast("Training-mean fill needs the polymer; uploaded curves use the linear bridge.", "info"); }
+  if (S.xai.method === "shap" && !shapAvailable()) S.xai.method = "occlusion";
+  if (S.xai.fill === "R1" && !S.model.r1[S.sample.polymer]) S.xai.fill = "R3";
   const t = performance.now();
-  S.occ = occlusion(S.model, S.sample.I, { width: S.xai.width, fill: S.xai.fill, reference });
+  if (S.xai.method === "shap") S.occ = shapUnits();
+  else {
+    const reference = S.xai.fill === "R1" ? S.model.r1[S.sample.polymer] : null;
+    S.occ = { method: "occlusion", ...occlusion(S.model, S.sample.I, { width: S.xai.width, fill: S.xai.fill, reference }) };
+  }
   S.occMs = performance.now() - t;
   if (!quiet || !S.xaiPicked) S.xai.analyte = defaultAnalyte();
   await sleep(quiet ? 120 : 380);
@@ -277,10 +286,35 @@ async function explain({ quiet = false } = {}) {
   drawChart(false);
 }
 
+/** SHAP values exist for the library curves only: they come from the XAI run, not from this page. */
+const shapAvailable = () => !!S.xaiData && S.sample?.source === "library";
+const unitKey = () => (S.xai.width === 5 ? "20mV" : "40mV");
+const logit = (p) => { const q = Math.min(Math.max(p, 1e-12), 1 - 1e-12); return Math.log(q) - Math.log1p(-q); };
+
+/** The run's KernelSHAP (R2: blank of the same chip, day and electrode) for this curve, as window rows. */
+function shapUnits() {
+  const d = S.xaiData.shap[unitKey()];
+  const i = S.sample.index;
+  const w = S.xai.width;
+  return {
+    method: "shap",
+    units: d.logit[i].map((row, j) => ({ i0: j * w, i1: (j + 1) * w, dlogit: row, dp: d.probability[i][j] })),
+    base: S.result.probs, baseLogit: S.result.probs.map(logit),
+    refLogit: d.base_logit[i], refP: d.base_probability[i],
+  };
+}
+
+/** E3 peak window of analyte k for the current coating (PVDF only; the test found none on P4VP). */
+function peakWindow(k, polymer = S.sample?.polymer) {
+  return S.xaiData?.windows?.[polymer]?.[S.model.analytes[k].id] ?? null;
+}
+
+const unitCenter = (u) => (E[u.i0] + E[u.i1 - 1]) / 2;
+
 function defaultAnalyte() {
   const p = S.result.probs;
   const det = p.map((v, k) => [v, k]).filter(([, k]) => S.result.detected[k]);
-  // the detected analyte whose decision depends most on one window is the most instructive
+  // the detected analyte with the single strongest window is the most instructive
   if (S.occ && det.length) return det.map(([, k]) => [Math.max(...S.occ.units.map((u) => u.dlogit[k])), k]).sort((a, b) => b[0] - a[0])[0][1];
   return p.indexOf(Math.max(...p));
 }
@@ -297,13 +331,21 @@ function drawChart(animate) {
   const k = S.xai.analyte;
   const name = S.model.analytes[k].name;
   const key = S.xai.scale === "logit" ? "dlogit" : "dp";
-  const regions = S.occ ? { label: CODES[k], scale: S.xai.scale, units: S.occ.units.map((u) => ({ i0: u.i0, i1: u.i1, value: u[key][k] })) } : null;
+  const pfi = S.xai.shade === "pfi" && S.xaiData;
+  const w = S.xai.width;
+  const regions = !S.occ ? null : pfi
+    ? { label: CODES[k], scale: "pfi", method: "pfi",
+        units: S.xaiData.pfi[unitKey()][S.xai.polymer][S.model.analytes[k].id].importance.map((v, j) => ({ i0: j * w, i1: (j + 1) * w, value: Math.max(0, v) })) }
+    : { label: CODES[k], scale: S.xai.scale, method: S.occ.method, units: S.occ.units.map((u) => ({ i0: u.i0, i1: u.i1, value: u[key][k] })) };
+  const win = S.occ && S.layers.xai ? peakWindow(k, pfi ? S.xai.polymer : S.sample.polymer) : null;
   const parts = ["solid: measured"];
   if (S.result?.denoised && S.layers.denoised) parts.push("glow: denoised");
-  if (regions && S.layers.xai) parts.push(`shaded: key regions for ${name}`);
+  if (regions && S.layers.xai) parts.push(pfi ? `shaded: where the model looks for ${name} (PFI, ${S.xai.polymer})` : `shaded: key regions for ${name} in this curve`);
+  if (regions && S.layers.xai && win) parts.push("dashed: peak window");
   chart.render({
     E, raw: S.sample.I, denoised: S.result?.denoised ?? null, blank: S.sample.blank, regions,
     layers: S.layers, note: parts.join(" · "), unit: S.unit, peaks: S.qc.peaks,
+    peakWindow: win ? { ...win, color: `--a${k}`, label: `${CODES[k]} peak window (E3)` } : null,
   }, { animate });
   $("#chartCaption").textContent = S.result ? `σ ${fmtI(S.result.sigma)} · λ ${fmtI(S.result.lambda)}` : "";
 }
@@ -508,45 +550,102 @@ function panelDetect() {
 function panelExplain() {
   const el = $("#panelExplain");
   if (!S.occ) {
-    el.innerHTML = head("04", "Explain", "Which parts of the curve the decision depends on.") + emptyState(ICON_WAVE, S.result ? "Press <b>Explain prediction</b> to mask each window of the curve and measure how each decision moves." : "Run <b>Analyze</b> first, then explain.",
+    el.innerHTML = head("04", "Explain", "Which parts of the curve the decision depends on.") + emptyState(ICON_WAVE, S.result ? "Press <b>Explain prediction</b> to see which windows of the curve carry the evidence." : "Run <b>Analyze</b> first, then explain.",
       S.result ? `<button class="btn btn-outline" id="explainInline">Explain prediction</button>` : "");
     $("#explainInline", el)?.addEventListener("click", () => explain());
     return;
   }
   const k = S.xai.analyte;
   const a = S.model.analytes[k];
+  const shap = S.occ.method === "shap";
   const canR1 = !!S.model.r1[S.sample.polymer];
+  const t = S.xaiData?.tests;
+  const test = !t ? null : shap ? t.shap_r2[unitKey()] : t.occlusion[`${unitKey()} ${S.xai.fill}`];
+  const windows = Object.fromEntries(S.model.analytes.map((x, i) => [i, peakWindow(i)]));
+  const intro = shap
+    ? `KernelSHAP from the XAI run, with each window's reference taken from the blank of the same chip, day and electrode (R2). It splits the step from blank to this curve over the ${S.occ.units.length} windows: red adds evidence for presence, blue takes it away. Of the local methods tested, this one lands on the peak most often.`
+    : `Occlusion, computed here: each ${S.xai.width * 4} mV window is replaced in turn and the curve re-scored. Red windows hold evidence for presence (masking them lowers the score); blue windows argue against it.`;
   el.innerHTML = `
-    ${head("04", "Explain", `Occlusion: each ${S.xai.width * 4} mV window is replaced in turn and the curve is re-scored. Red windows hold evidence for presence (masking them lowers the score); blue windows argue against it.`)}
+    ${head("04", "Explain", intro)}
     <div class="xai-controls">
       <div class="ctl"><div class="seg" id="xaiAnalyte" role="radiogroup" aria-label="Analyte">${S.model.analytes.map((x, i) => `<button role="radio" data-v="${i}" aria-checked="${i === k}">${CODES[i]}</button>`).join("")}</div></div>
+      ${S.xaiData ? `<div class="ctl"><label>Graph</label><div class="seg" id="xaiShade" role="radiogroup" aria-label="What the graph shades"><button role="radio" data-v="pfi" aria-checked="${S.xai.shade === "pfi"}" title="Where the model looks for this analyte across all held-out curves (PFI)">Model-wide</button><button role="radio" data-v="local" aria-checked="${S.xai.shade === "local"}" title="This curve's own explanation">This curve</button></div></div>` : ""}
+      <div class="ctl"><label>Method</label><div class="seg" id="xaiMethod" role="radiogroup" aria-label="Explanation method"><button role="radio" data-v="shap" aria-checked="${shap}" ${shapAvailable() ? "" : "disabled title='Precomputed by the XAI run for the library curves only'"}>SHAP · blank</button><button role="radio" data-v="occlusion" aria-checked="${!shap}">Occlusion</button></div></div>
       <div class="ctl"><label>Window</label><div class="seg" id="xaiWidth" role="radiogroup" aria-label="Window width"><button role="radio" data-v="5" aria-checked="${S.xai.width === 5}">20 mV</button><button role="radio" data-v="10" aria-checked="${S.xai.width === 10}">40 mV</button></div></div>
-      <div class="ctl"><label>Fill</label><div class="seg" id="xaiFill" role="radiogroup" aria-label="Fill used for the masked window"><button role="radio" data-v="R3" aria-checked="${S.xai.fill === "R3"}" title="Straight line between the window's neighbours">Bridge</button><button role="radio" data-v="R1" aria-checked="${S.xai.fill === "R1"}" ${canR1 ? "title='Training mean curve of the same coating'" : "disabled title='Needs the coating; not known for uploads'"}>Train mean</button></div></div>
+      ${shap ? "" : `<div class="ctl"><label>Fill</label><div class="seg" id="xaiFill" role="radiogroup" aria-label="Fill used for the masked window"><button role="radio" data-v="R1" aria-checked="${S.xai.fill === "R1"}" ${canR1 ? "title='Training mean curve of the same coating (the XAI run default)'" : "disabled title='Needs the coating; not known for uploads'"}>Train mean</button><button role="radio" data-v="R0" aria-checked="${S.xai.fill === "R0"}" title="Zeros">Zero</button><button role="radio" data-v="R3" aria-checked="${S.xai.fill === "R3"}" title="Straight line between the window's neighbours">Bridge</button></div></div>`}
       <div class="ctl"><label>Scale</label><div class="seg" id="xaiScale" role="radiogroup" aria-label="Effect scale"><button role="radio" data-v="logit" aria-checked="${S.xai.scale === "logit"}">Log-odds</button><button role="radio" data-v="dp" aria-checked="${S.xai.scale === "dp"}">P</button></div></div>
     </div>
-    <svg class="heat" id="heatChart" role="img" aria-label="Occlusion map for the four analytes"></svg>
-    <div class="legend-ramp"><span>masking raises the score</span><i></i><span>masking lowers it</span><span style="margin-left:auto">${S.occ.units.length} windows × 4 analytes · ${S.occMs.toFixed(1)} ms</span></div>
+    ${test ? `<p class="xai-test">${testLine(test, shap)}</p>` : ""}
+    <svg class="heat" id="heatChart" role="img" aria-label="Explanation map for the four analytes"></svg>
+    <div class="legend-ramp"><span>${shap ? "toward absent" : "masking raises the score"}</span><i></i><span>${shap ? "toward present" : "masking lowers it"}</span>${Object.values(windows).some(Boolean) ? `<span class="legend-win"><b></b>E3 peak window</span>` : ""}<span style="margin-left:auto">${S.occ.units.length} windows × 4 analytes${shap ? " · from the XAI run" : ` · ${S.occMs.toFixed(1)} ms`}</span></div>
     <div class="xai-grid">
       <div><p class="section-label">What influenced ${esc(a.name.toLowerCase())}</p><p class="xai-text">${narrative(k)}</p></div>
       <div><p class="section-label">Wavelet bands ${esc(a.name.toLowerCase())} relies on</p><div class="bands" id="bandBars"></div>
         <p class="caption">Share of this model's split gain per band, from training. Coarse bands (cA6, cD6) describe peak shape and position; fine bands (cD1, cD2) mostly noise.</p></div>
     </div>
-    <div style="margin-top:22px">
-      <div class="panel-head" style="margin-bottom:8px"><div><p class="section-label" style="margin:0">Across the 125 held-out curves</p></div><button class="chip-btn" id="globalBtn">${S.global.has(globalKey()) ? "Computed" : S.globalBusy === globalKey() ? "Computing…" : "Compute"}</button></div>
-      <div class="legend">${S.model.analytes.map((x, i) => `<span style="--c:var(--a${i})"><i></i>${esc(x.name)}</span>`).join("")}</div>
-      <div class="progress" id="globalProg" ${S.globalBusy === globalKey() ? "" : "hidden"}><i></i></div>
-      <svg class="profile" id="profileChart" role="img" aria-label="Mean absolute occlusion effect per window across the library"></svg>
-      <p class="caption">Mean |Δ ${S.xai.scale === "logit" ? "log-odds" : "P"}| per window across every held-out curve, same window and fill. Where a line peaks is where that model looks, independent of this one sample.</p>
-    </div>`;
-  heatChart($("#heatChart"), S.model.analytes, S.occ, E, k, (row) => pickAnalyte(row), S.xai.scale);
+    ${globalSection()}`;
+  heatChart($("#heatChart"), S.model.analytes, S.occ, E, k, (row) => pickAnalyte(row), S.xai.scale, windows);
   segmented($("#xaiScale"), (v) => { S.xai.scale = v; renderPanel("explain"); drawChart(false); });
   segmented($("#xaiAnalyte"), (v) => pickAnalyte(+v));
+  segmented($("#xaiMethod"), (v) => { S.xai.method = v; S.xai.userMethod = v; S.xai.shade = "local"; explain({ quiet: true }); });
+  if ($("#xaiShade")) segmented($("#xaiShade"), (v) => { S.xai.shade = v; drawChart(false); });
   segmented($("#xaiWidth"), (v) => { S.xai.width = +v; explain({ quiet: true }); });
-  segmented($("#xaiFill"), (v) => { S.xai.fill = v; explain({ quiet: true }); });
+  if (!shap) segmented($("#xaiFill"), (v) => { S.xai.fill = v; explain({ quiet: true }); });
+  const pol = $("#pfiPolymer");
+  if (pol) segmented(pol, (v) => { S.xai.polymer = v; renderPanel("explain"); drawChart(false); });
   renderBands(k);
-  $("#globalBtn").addEventListener("click", computeGlobal);
-  if (S.global.has(globalKey())) drawProfile();
-  else computeGlobal();
+  drawPfi();
+}
+
+const pct0 = (v) => `${Math.round(v * 100)}%`;
+
+/** One line with the XAI run's own test numbers for the method on screen. */
+function testLine(test, shap) {
+  const e3 = test.e3;
+  return `<b>Your XAI tests</b> (${shap ? "SHAP · R2" : `occlusion · ${S.xai.fill}`}, ${unitKey().replace("mV", " mV")}): `
+    + `peak test E3 — the ${S.xai.width * 4} mV map beats 95% of random placements on the PVDF peak window in ${pct0(e3.hit)} of analyte × seed cases `
+    + `(mean percentile ${e3.percentile.toFixed(2)}); edge share P4VP ${pct0(test.edge.P4VP)} · PVDF ${pct0(test.edge.PVDF)} (even spread: 10%).`;
+}
+
+function globalSection() {
+  if (!S.xaiData) return `<p class="caption" style="margin-top:22px">Model-wide importance (PFI) is read from the XAI run's results (data/xai.json), which are not loaded.</p>`;
+  const pol = S.xai.polymer;
+  return `
+    <div style="margin-top:24px">
+      <div class="panel-head" style="margin-bottom:8px">
+        <div><p class="section-label" style="margin:0">Model-wide · where this model looks (PFI)</p></div>
+        <div class="seg seg-sm" id="pfiPolymer" role="radiogroup" aria-label="Coating">${["P4VP", "PVDF"].map((p) => `<button role="radio" data-v="${p}" aria-checked="${p === pol}">${p}</button>`).join("")}</div>
+      </div>
+      <div class="legend">${S.model.analytes.map((x, i) => `<span style="--c:var(--a${i})"><i></i>${esc(x.name)}</span>`).join("")}</div>
+      <svg class="profile" id="profileChart" role="img" aria-label="Permutation importance per window for the four analytes"></svg>
+      <p class="caption" id="pfiCaption"></p>
+    </div>`;
+}
+
+function drawPfi() {
+  const svg = $("#profileChart");
+  if (!svg || !S.xaiData) return;
+  const pol = S.xai.polymer;
+  const data = S.xaiData.pfi[unitKey()][pol];
+  const w = S.xai.width;
+  const prof = S.model.analytes.map((a) => {
+    const v = data[a.id].importance;
+    const m = Math.max(...v.map((x) => Math.max(0, x))) || 1;
+    return v.map((x) => Math.max(0, x) / m);
+  });
+  const centers = prof[0].map((_, j) => (E[j * w] + E[Math.min(199, j * w + w - 1)]) / 2);
+  const windows = S.model.analytes.map((_, i) => peakWindow(i, pol));
+  profileChart(svg, S.model.analytes, prof, centers, windows);
+  const tops = S.model.analytes.map((a, i) => {
+    const j = prof[i].indexOf(1);
+    const c = centers[j];
+    const win = windows[i];
+    const on = win && c >= win.lo && c <= win.hi;
+    return `${CODES[i]} ${c.toFixed(3)} V${win ? (on ? " ✓" : " ✗") : ""}`;
+  });
+  $("#pfiCaption").innerHTML = `Grouped permutation importance from the XAI run for this exact model: each ${w * 4} mV window is shuffled across the held-out ${esc(pol)} curves and the rise in log-loss is measured; each line is scaled to its own maximum. `
+    + (pol === "PVDF" ? `Coloured bars under the axis are the E3 peak windows. Most important window: ${tops.join(" · ")}.` : `The E3 test found no peak window on P4VP (the blank-subtracted single-analyte means have no in-axis peak). Most important window: ${tops.join(" · ")}.`)
+    + ` In the 2026-10-11 XAI results (PVDF, mean over 5 seeds × 6 models) PFI was the most reliable method: top window on the peak for 4/4 analytes, the most stable (0.89), no edge bias.`;
 }
 
 function pickAnalyte(k) {
@@ -567,74 +666,42 @@ function renderBands(k) {
 
 function narrative(k) {
   const occ = S.occ;
+  const shap = occ.method === "shap";
   const p = occ.base[k];
   const a = S.model.analytes[k].name;
   const thr = S.model.thresholds[k];
   const det = S.result.detected[k];
   const r = (u) => `<span class="mono">${(E[u.i0] - 0.002).toFixed(2)}–${(E[u.i1 - 1] + 0.002).toFixed(2)} V</span>`;
-  const after = (u) => (p - u.dp[k]);
   const pos = [...occ.units].sort((x, y) => y.dlogit[k] - x.dlogit[k]);
   const neg = [...occ.units].sort((x, y) => x.dlogit[k] - y.dlogit[k]);
-  const total = occ.units.reduce((acc, u) => acc + Math.abs(u.dlogit[k]), 0) || 1;
+  const positive = occ.units.reduce((acc, u) => acc + Math.max(0, u.dlogit[k]), 0) || 1;
   const out = [`<b>${esc(a)}</b> is ${det ? "detected" : "not detected"}: P = <span class="mono">${p.toFixed(3)}</span>, log-odds <span class="mono">${occ.baseLogit[k].toFixed(1)}</span>.`];
   const top = pos[0];
-  if (top.dlogit[k] > 1) {
-    const flips = det && after(top) < thr;
-    out.push(`The decision leans most on ${r(top)}: masking it lowers the log-odds by <span class="mono">${top.dlogit[k].toFixed(1)}</span> (P → <span class="mono">${after(top).toFixed(3)}</span>)${flips ? ", <b>enough to flip the call</b>" : ""}. That window carries ${pct(top.dlogit[k] / total)} of all masking effect for this analyte.`);
-    if (pos[1].dlogit[k] > 1) out.push(`${r(pos[1])} is the next strongest (<span class="mono">−${pos[1].dlogit[k].toFixed(1)}</span>).`);
-    if (det && !flips && p > 0.99) out.push(`P stays high under every single mask, so the evidence is redundant across windows.`);
-  } else if (det) {
-    out.push(`No window lowers the log-odds by more than 1: the evidence is spread across the curve.`);
+  if (shap) {
+    out.push(`Against its blank (log-odds <span class="mono">${occ.refLogit[k].toFixed(1)}</span>) the windows add up to <span class="mono">${(occ.baseLogit[k] - occ.refLogit[k]).toFixed(1)}</span>.`);
+    if (top.dlogit[k] > 0.5) out.push(`${r(top)} adds the most, <span class="mono">+${top.dlogit[k].toFixed(1)}</span>${pos[1].dlogit[k] > 0.5 ? `, then ${r(pos[1])} (<span class="mono">+${pos[1].dlogit[k].toFixed(1)}</span>)` : ""}.`);
+    else out.push(`No window adds more than <span class="mono">0.5</span>: nothing in this curve speaks clearly for ${esc(a.toLowerCase())}.`);
+    if (neg[0].dlogit[k] < -0.5) out.push(`${r(neg[0])} pulls toward absent (<span class="mono">${neg[0].dlogit[k].toFixed(1)}</span>).`);
+  } else if (top.dlogit[k] > 1) {
+    const after = p - top.dp[k];
+    const flips = det && after < thr;
+    out.push(`The decision leans most on ${r(top)}: masking it lowers the log-odds by <span class="mono">${top.dlogit[k].toFixed(1)}</span> (P → <span class="mono">${after.toFixed(3)}</span>)${flips ? ", <b>enough to flip the call</b>" : ""}.`);
+    if (neg[0].dlogit[k] < -1) out.push(`${r(neg[0])} pulls the other way — masking it raises the log-odds by <span class="mono">${(-neg[0].dlogit[k]).toFixed(1)}</span>.`);
   } else {
-    out.push(`No window holds strong evidence for ${esc(a.toLowerCase())}.`);
+    out.push(det ? `No window lowers the log-odds by more than 1: the evidence is spread across the curve.` : `No window holds strong evidence for ${esc(a.toLowerCase())}.`);
   }
-  if (neg[0].dlogit[k] < -1) out.push(`${r(neg[0])} pulls the other way — masking it raises the log-odds by <span class="mono">${(-neg[0].dlogit[k]).toFixed(1)}</span>.`);
-  out.push(`<br><span style="color:var(--muted)">Occlusion explains the model, not the chemistry: a window matters because the classifier uses it, which need not be an oxidation peak of ${esc(a.toLowerCase())}.</span>`);
+  const win = peakWindow(k);
+  if (win && top.dlogit[k] > 0) {
+    const inside = occ.units.filter((u) => unitCenter(u) >= win.lo && unitCenter(u) <= win.hi);
+    const share = inside.reduce((acc, u) => acc + Math.max(0, u.dlogit[k]), 0) / positive;
+    const c = unitCenter(top);
+    const hit = c >= win.lo && c <= win.hi;
+    out.push(`The E3 peak window of ${esc(a.toLowerCase())} on PVDF is <span class="mono">${win.lo.toFixed(3)}–${win.hi.toFixed(3)} V</span> (peak ${win.center.toFixed(3)} V): the strongest window lies <b>${hit ? "inside it" : "outside it"}</b>, and windows inside it carry ${pct0(share)} of the positive evidence.`);
+  } else if (S.sample.polymer === "P4VP") {
+    out.push(`<span style="color:var(--muted)">On P4VP the E3 test found no peak window, so there is no reference position to compare with.</span>`);
+  }
+  out.push(`<br><span style="color:var(--muted)">This explains the model, not the chemistry: a window matters because the classifier uses it.</span>`);
   return out.join(" ");
-}
-
-const globalKey = () => `${S.xai.width}|${S.xai.fill}`;
-let globalRun = 0;
-
-async function computeGlobal() {
-  const key = globalKey();
-  if (S.global.has(key)) { drawProfile(); return; }
-  if (S.globalBusy === key) return;
-  const run = ++globalRun;
-  S.globalBusy = key;
-  if ($("#globalProg")) $("#globalProg").hidden = false;
-  if ($("#globalBtn")) $("#globalBtn").textContent = "Computing…";
-  const U = Math.ceil(200 / S.xai.width);
-  const acc = Array.from({ length: 4 }, () => new Float64Array(U));
-  const accL = Array.from({ length: 4 }, () => new Float64Array(U));
-  const opts = { width: S.xai.width, fill: S.xai.fill };
-  for (let i = 0; i < S.library.length; i++) {
-    const s = S.library[i];
-    const o = occlusion(S.model, s.I, { ...opts, reference: opts.fill === "R1" ? S.model.r1[s.polymer] : null });
-    o.units.forEach((u, j) => u.dp.forEach((d, k) => { acc[k][j] += Math.abs(d); accL[k][j] += Math.abs(u.dlogit[k]); }));
-    if (i % 6 === 5) {
-      const bar = $("#globalProg i");
-      if (bar) bar.style.width = `${((i + 1) / S.library.length) * 100}%`;
-      await nextFrame();
-      if (globalKey() !== key) { if (run === globalRun) S.globalBusy = null; return; }
-    }
-  }
-  const avg = (rows) => rows.map((a) => Array.from(a, (v) => v / S.library.length));
-  S.global.set(key, { dp: avg(acc), logit: avg(accL) });
-  if (run === globalRun) S.globalBusy = null;
-  if (globalKey() === key && S.step === "explain") drawProfile();
-}
-
-function drawProfile() {
-  const both = S.global.get(globalKey());
-  const prof = both?.[S.xai.scale === "logit" ? "logit" : "dp"];
-  const svg = $("#profileChart");
-  if (!prof || !svg) return;
-  if ($("#globalProg")) $("#globalProg").hidden = true;
-  if ($("#globalBtn")) $("#globalBtn").textContent = "Computed";
-  const w = S.xai.width;
-  const centers = prof[0].map((_, j) => (E[j * w] + E[Math.min(199, j * w + w - 1)]) / 2);
-  profileChart(svg, S.model.analytes, prof, centers);
 }
 
 /* ───────────── Results card ───────────── */

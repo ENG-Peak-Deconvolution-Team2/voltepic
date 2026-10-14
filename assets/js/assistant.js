@@ -114,6 +114,14 @@ const topAnalyte = (c) => {
   return pool.sort((a, b) => b[0] - a[0])[0][1];
 };
 
+/** ", inside the E3 peak window" when the window centre lies in the analyte's PVDF peak window. */
+const peakNote = (c, k, u) => {
+  const win = c.peakWindow?.(k);
+  if (!win) return "";
+  const centre = (c.E[u.i0] + c.E[u.i1 - 1]) / 2;
+  return centre >= win.lo && centre <= win.hi ? ", inside its E3 peak window" : `, outside its E3 peak window (${win.lo.toFixed(2)}–${win.hi.toFixed(2)} V)`;
+};
+
 const names = (c, ks) => ks.map((k) => `<b>${esc(c.analytes[k].name)}</b>`).join(ks.length > 2 ? ", " : " and ").replace(/, ([^,]*)$/, " and $1");
 const range = (c, u) => `${(c.E[u.i0] - 0.002).toFixed(2)}–${(c.E[u.i1 - 1] + 0.002).toFixed(2)} V`;
 
@@ -134,12 +142,15 @@ const answers = {
 
   regions(c) {
     const lines = [];
+    const shap = c.occ.method === "shap";
     const ks = c.result.detected.some(Boolean) ? c.result.detected.map((d, k) => (d ? k : -1)).filter((k) => k >= 0) : [topAnalyte(c)];
     for (const k of ks) {
       const best = [...c.occ.units].sort((a, b) => b.dlogit[k] - a.dlogit[k])[0];
-      lines.push(`${esc(c.analytes[k].name)}: <b>${range(c, best)}</b> (masking it lowers the log-odds by <span class="mono">${best.dlogit[k].toFixed(1)}</span>)`);
+      const effect = shap ? `adds <span class="mono">+${best.dlogit[k].toFixed(1)}</span> log-odds` : `masking it lowers the log-odds by <span class="mono">${best.dlogit[k].toFixed(1)}</span>`;
+      lines.push(`${esc(c.analytes[k].name)}: <b>${range(c, best)}</b> (${effect}${peakNote(c, k, best)})`);
     }
-    return `The most influential windows, found by masking each ${c.widthMv} mV window in turn:<br>${lines.join("<br>")}<br>They are shaded on the graph; the Explain step shows the full map.`;
+    const how = shap ? `SHAP from the XAI run (blank reference), ${c.widthMv} mV windows` : `masking each ${c.widthMv} mV window in turn`;
+    return `The most influential windows, by ${how}:<br>${lines.join("<br>")}<br>They are shaded on the graph; the Explain step shows the full map.`;
   },
 
   why(c, question) {
@@ -151,7 +162,12 @@ const answers = {
     const strong = sorted.filter((u) => u.dlogit[a] > 1).length;
     const verb = c.result.detected[a] ? "detected" : "not detected";
     let s = `${esc(c.analytes[a].name)} was ${verb} with P = <span class="mono">${p.toFixed(3)}</span> (threshold <span class="mono">${c.thresholds[a].toFixed(2)}</span>). `;
-    if (best.dlogit[a] > 1) s += `The evidence sits mainly in <b>${range(c, best)}</b>: replacing that window by a straight line lowers the log-odds by <span class="mono">${best.dlogit[a].toFixed(1)}</span> (P → <span class="mono">${(p - best.dp[a]).toFixed(3)}</span>).`;
+    if (c.occ.method === "shap") {
+      if (best.dlogit[a] > 0.5) s += `Compared with its blank, the evidence comes mainly from <b>${range(c, best)}</b>, which adds <span class="mono">+${best.dlogit[a].toFixed(1)}</span> log-odds${peakNote(c, a, best)}.`;
+      else s += `No window adds more than 0.5 log-odds against the blank.`;
+      return s;
+    }
+    if (best.dlogit[a] > 1) s += `The evidence sits mainly in <b>${range(c, best)}</b>: masking that window lowers the log-odds by <span class="mono">${best.dlogit[a].toFixed(1)}</span> (P → <span class="mono">${(p - best.dp[a]).toFixed(3)}</span>)${peakNote(c, a, best)}.`;
     else s += `No single window lowers the log-odds by more than 1, so the decision draws on the curve as a whole rather than one peak.`;
     if (strong > 1) s += ` ${strong} windows each lower the log-odds by more than 1.`;
     return s;
