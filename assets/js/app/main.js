@@ -311,7 +311,7 @@ function renderToolbar() {
   $("#sbSub").textContent = s.source === "library"
     ? `held-out #${String(s.index + 1).padStart(3, "0")} · ${s.polymer} · ${s.chip} · ${s.electrode}${s.rep ? ` · rep ${s.rep}` : ""}`
     : `${s.sourceLabel} · ${s.inputPoints} points${s.channelName && s.channels.length > 1 ? ` · ${s.channelName}` : ""}`;
-  document.title = `${s.source === "library" ? s.title : s.file} — Analyzer`;
+  document.title = `${s.source === "library" ? s.title : s.file} — VoltEPIC Analyzer`;
 }
 
 /* ───────────── Library sheet ───────────── */
