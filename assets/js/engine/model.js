@@ -100,5 +100,11 @@ export function createModel(json) {
     return { denoised: signal, sigma, lambda, features: feats, margins: m, probs, detected: probs.map((p, k) => p >= thresholds[k]) };
   }
 
-  return { denoise, features, score, scoreMany: (raws) => raws.map(score), bands, analytes: json.analytes, thresholds, grid: json.grid, r1: json.r1 };
+  /** Leaf value of every tree, per head: how the margin builds up, tree by tree. */
+  function contributions(feat) {
+    margins(feat);
+    return heads.map((h) => Float64Array.from(h.trees, (t) => evalTree(t, design)));
+  }
+
+  return { denoise, features, score, contributions, scoreMany: (raws) => raws.map(score), bands, analytes: json.analytes, thresholds, grid: json.grid, r1: json.r1 };
 }

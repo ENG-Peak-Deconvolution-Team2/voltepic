@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Model card — Peak Deconvolution</title>
+  <meta name="description" content="What the detection model is, what it was trained and checked on, its measured held-out results, and where it should not be trusted.">
+  <meta property="og:title" content="Model card — Peak Deconvolution">
+  <meta property="og:description" content="One model, four decisions, every number checkable. ENG Peak Deconvolution, Team 2.">
+  <meta name="theme-color" content="#f6f5f1">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/pages.css">
+  <link rel="stylesheet" href="assets/css/page-model.css">
+  <script src="assets/js/shell.js"></script>
+  <script type="module" src="assets/js/pages/model.js"></script>
+</head>
+<body class="page-model">
+  <a class="skip" href="#main">Skip to content</a>
+  <pd-nav></pd-nav>
+
+  <main id="main">
+    <header class="page-head">
+      <div class="container">
+        <span class="eyebrow reveal">Model card</span>
+        <h1 class="h1 reveal" data-delay="1">One model, <em>four decisions, every number checkable.</em></h1>
+        <p class="lede reveal" data-delay="2">What the detector is made of, what it was trained and tested on, how it performs on curves it never saw — recomputed in your browser as you read — and where it should not be trusted.</p>
+        <nav class="toc reveal" data-delay="3" aria-label="On this page">
+          <a href="#overview">Overview</a><a href="#results">Results</a><a href="#parity">Reference check</a><a href="#limits">Limits</a><a href="#reproduce">Reproduce</a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- ───────────── Overview ───────────── -->
+    <section class="section tight" id="overview">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Overview</span>
+          <h2 class="h2 reveal" data-delay="1">What the model <em>is.</em></h2>
+        </div>
+        <div class="split top">
+          <div class="card card-pad reveal">
+            <div class="card-head"><span class="card-title">Pipeline</span><span class="badge">LightGBM · rbio1.3</span></div>
+            <dl class="kv">
+              <div><dt>Task</dt><dd>four independent present / absent classifiers (AA, 5-HT, 2E, Mela)</dd></div>
+              <div><dt>Input</dt><dd>raw SWV curve, 200 points, 0.004–0.800 V, no blank subtraction</dd></div>
+              <div><dt>Denoising</dt><dd>sym4 wavelet, 3 levels, soft universal threshold, σ from the MAD of the finest band</dd></div>
+              <div><dt>Features</dt><dd>full rbio1.3 DWT, 6 levels, 228 coefficients (cA6, cD6 … cD1)</dd></div>
+              <div><dt>Scaling</dt><dd>z-score with training statistics</dd></div>
+              <div><dt>Classifier</dt><dd>LightGBM per analyte · learning rate 0.10 · 31 leaves · 300 trees</dd></div>
+            </dl>
+          </div>
+          <div class="card card-pad reveal" data-delay="1">
+            <div class="card-head"><span class="card-title">Training and decision</span><span class="badge">seed 0</span></div>
+            <dl class="kv">
+              <div><dt>Augmentation</dt><dd id="mAug">—</dd></div>
+              <div><dt>Threshold rule</dt><dd>MaxSSS (Youden) cut on the real training rows</dd></div>
+              <div><dt>Thresholds</dt><dd id="mThr">—</dd></div>
+              <div><dt>Training data</dt><dd>1,114 real curves · seed-0 outer-training partition of ACS-ML-Biomarker</dd></div>
+              <div><dt>Evaluation data</dt><dd>125 held-out curves from 46 blocks</dd></div>
+            </dl>
+          </div>
+        </div>
+        <div class="note use reveal" data-delay="2">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+          <div><b>Intended use.</b> Research and teaching demonstration of detection plus explanation on this data set. <b>Not a diagnostic device</b>; do not use it to make decisions about a person.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Results ───────────── -->
+    <section class="section" id="results">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Results · computed live</span>
+          <h2 class="h2 reveal" data-delay="1">What it does on <em>125 curves it never saw.</em></h2>
+          <p class="lede reveal" data-delay="2">Your browser loads the model, scores each held-out curve, and compares P ≥ threshold with the label (concentration &gt; 0). Nothing below is typed in.</p>
+        </div>
+        <div class="card card-pad reveal">
+          <div class="card-head"><span class="card-title">Per analyte</span><span class="badge" id="resBadge">computing…</span></div>
+          <div class="scroll-x"><table class="table" id="resTable"><thead><tr><th>Analyte</th><th>Present</th><th>Absent</th><th>Accuracy</th><th>Balanced acc.</th><th>Sensitivity</th><th>Specificity</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="cms" id="cms"></div>
+        <figure class="figure card card-pad reveal">
+          <div class="card-head"><span class="card-title">Probability per curve</span><span class="small">black tick = threshold</span></div>
+          <div class="legend" id="stripLegend"></div>
+          <div id="strips" class="strips"></div>
+          <figcaption>Each dot is one held-out curve. Coloured: the analyte is present in that curve; grey: absent. Hover for the file name.</figcaption>
+        </figure>
+        <div class="card card-pad reveal">
+          <div class="card-head"><span class="card-title">Misclassified curves</span><span class="badge" id="missBadge">—</span></div>
+          <div class="scroll-x"><table class="table miss" id="missTable"><thead><tr><th>File</th><th>Analyte</th><th>P</th><th>Label</th><th></th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <p class="small cap reveal"><b>Read this as a sanity check, not a benchmark.</b> One fitted model, one held-out partition; replicates of a mixture share a block, so curves are not independent.</p>
+      </div>
+    </section>
+
+    <!-- ───────────── Reference check ───────────── -->
+    <section class="section" id="parity">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Reference check</span>
+          <h2 class="h2 reveal" data-delay="1">Same answers as <em>Python.</em></h2>
+        </div>
+        <div class="split top">
+          <div class="tile parity-live reveal">
+            <div class="par-top"><svg class="par-icon" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg><span class="eyebrow no-rule">Live, this page load</span></div>
+            <div class="stat num" id="parStat">—</div>
+            <p id="parText">Decisions that differ from the Python reference probabilities stored with each curve.</p>
+            <dl class="kv"><div><dt>max |P<sub>browser</sub> − P<sub>python</sub>|</dt><dd id="parMax">—</dd></div></dl>
+          </div>
+          <div class="card card-pad reveal" data-delay="1">
+            <div class="card-head"><span class="card-title">Offline parity test</span><span class="badge" data-tone="ok">all 125 curves</span></div>
+            <dl class="kv">
+              <div><dt>max |Δ denoised|</dt><dd>4.4e-16</dd></div>
+              <div><dt>max |Δ features|</dt><dd>2.7e-15</dd></div>
+              <div><dt>max |Δ raw margin|</dt><dd>0</dd></div>
+              <div><dt>max |Δ probability|</dt><dd>8.7e-19</dd></div>
+              <div><dt>decision disagreements</dt><dd>0</dd></div>
+            </dl>
+            <p class="small cap">Run with <span class="mono">node tools/parity.mjs</span>, every stage compared.</p>
+          </div>
+        </div>
+        <p class="body-lg reveal par-expl">The browser engine reimplements PyWavelets (<span class="mono">wavedec</span> / <span class="mono">waverec</span>, symmetric mode) and LightGBM tree traversal. Trees, filters, scaler and thresholds are exported from Python into <span class="mono">data/model.json</span>; nothing is retrained or approximated in the page.</p>
+      </div>
+    </section>
+
+    <!-- ───────────── Limits ───────────── -->
+    <section class="section" id="limits">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Limits</span>
+          <h2 class="h2 reveal" data-delay="1">Where it <em>should not be trusted.</em></h2>
+        </div>
+        <ul class="limits">
+          <li class="note reveal"><svg viewBox="0 0 24 24"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17h.01"/></svg><div><b>One model, one partition.</b> A single fitted model and a single split (seed 0). Spread across refits and partitions was not measured.</div></li>
+          <li class="note reveal" data-delay="1"><svg viewBox="0 0 24 24"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17h.01"/></svg><div><b>Held-out curves come in blocks.</b> Replicates of one mixture sit in the same block, so the 125 curves are not independent samples.</div></li>
+          <li class="note reveal" data-delay="2"><svg viewBox="0 0 24 24"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17h.01"/></svg><div><b>Only seen these chips.</b> ACS-ML-Biomarker data: P4VP / PVDF coatings, CHI760F, SWV 25 mV, 5 Hz. Its probabilities do not signal when a curve is from elsewhere; a feature z-score check could not separate such curves, because held-out curves already reach max |z| ≈ 950.</div></li>
+          <li class="note reveal" data-delay="3"><svg viewBox="0 0 24 24"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17h.01"/></svg><div><b>Boundary effects.</b> A 6-level DWT on 200 points has them: 30 of the 228 coefficients depend almost only on the first or last 10 points and carry 9–20% of the model's split gain.</div></li>
+          <li class="note reveal" data-delay="4"><svg viewBox="0 0 24 24"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17h.01"/></svg><div><b>Saturating probabilities.</b> P pins near 0 and 1, so explanations are read on the log-odds scale.</div></li>
+          <li class="note reveal" data-delay="4"><svg viewBox="0 0 24 24"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17h.01"/></svg><div><b>Detection only.</b> The model says present or absent; it gives no concentration estimate.</div></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ───────────── Reproduce ───────────── -->
+    <section class="section tight" id="reproduce">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Reproduce</span>
+          <h2 class="h2 reveal" data-delay="1">Rebuild it <em>yourself.</em></h2>
+        </div>
+        <div class="split top">
+          <div class="card card-pad reveal">
+            <div class="card-head"><span class="card-title">Environment</span><span class="badge" id="mCreated">—</span></div>
+            <dl class="kv" id="mVersions"></dl>
+          </div>
+          <div class="card card-pad reveal" data-delay="1">
+            <div class="card-head"><span class="card-title">Scripts</span></div>
+            <ul class="scripts">
+              <li><span class="mono">tools/export_model.py</span><p>Refits the model through the campaign code; writes <span class="mono">model.json</span> and <span class="mono">library.json</span>.</p></li>
+              <li><span class="mono">tools/export_xai.py</span><p>Writes <span class="mono">xai.json</span> from the XAI run, after checking that rows and model match.</p></li>
+              <li><span class="mono">node tools/parity.mjs</span><p>Compares the browser engine with Python at every stage on all 125 curves.</p></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <pd-footer></pd-footer>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- GitHub Pages serves this file for unknown paths; the base makes assets resolve from any depth. Comment out when testing locally. -->
+  <base href="/analysis-dashboard/">
+  <title>Page not found — Peak Deconvolution</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#f6f5f1">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/pages.css">
+  <style>
+    .nf { min-height: calc(100vh - var(--nav-h) - 280px); display: grid; place-items: center; padding: clamp(48px, 9vw, 120px) 0; text-align: center; }
+    .nf-inner { display: grid; justify-items: center; gap: 22px; }
+    .nf-trace { width: min(560px, 100%); height: auto; }
+    .nf-trace text { fill: var(--muted); font: 11px var(--mono); }
+    .nf-trace .base { stroke: var(--axis); stroke-width: 1; }
+    .nf-trace .sig { fill: none; stroke: var(--signal); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 520; stroke-dashoffset: 520; animation: nf-draw 1.6s var(--ease-out) .2s forwards; }
+    .nf-trace .gap { fill: none; stroke: var(--critical); stroke-width: 2; stroke-dasharray: 3 6; stroke-linecap: round; opacity: 0; animation: nf-fade .6s 1.6s forwards; }
+    .nf-trace .dot { fill: var(--critical); opacity: 0; animation: nf-fade .4s 1.5s forwards; }
+    @keyframes nf-draw { to { stroke-dashoffset: 0; } }
+    @keyframes nf-fade { to { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .nf-trace .sig { animation: none; stroke-dashoffset: 0; } .nf-trace .gap, .nf-trace .dot { animation: none; opacity: 1; } }
+    .nf .lede { margin: 0 auto; }
+  </style>
+  <script src="assets/js/shell.js"></script>
+  <script type="module">import "./assets/js/site.js";</script>
+</head>
+<body class="page-404">
+  <a class="skip" href="#main">Skip to content</a>
+  <pd-nav></pd-nav>
+
+  <main id="main" class="nf">
+    <div class="container nf-inner">
+      <svg class="nf-trace reveal viz" viewBox="0 0 560 140" role="img" aria-label="A voltammogram trace that stops partway across the axis">
+        <line class="base" x1="10" x2="550" y1="116" y2="116"/>
+        <path class="sig" d="M10 112 C60 112 90 108 130 100 C160 94 170 40 200 36 C225 33 232 80 260 100 C285 114 300 112 330 112"/>
+        <path class="gap" d="M330 112 L548 112"/>
+        <circle class="dot" cx="330" cy="112" r="4"/>
+        <text x="10" y="134">0.0 V</text><text x="550" y="134" text-anchor="end">0.8 V</text>
+      </svg>
+      <span class="eyebrow reveal" data-delay="1">Error 404</span>
+      <h1 class="h1 reveal" data-delay="2">This page <em>does not exist.</em></h1>
+      <p class="lede reveal" data-delay="3">The address may be mistyped, or the page may have moved. The analyzer and the home page are one click away.</p>
+      <div class="row reveal" data-delay="4" style="justify-content:center">
+        <a class="btn btn-primary btn-lg" href="index.html">Back to home</a>
+        <a class="btn btn-secondary btn-lg" href="app.html">Open the analyzer <svg class="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      </div>
+    </div>
+  </main>
+
+  <pd-footer></pd-footer>
+</body>
+</html>

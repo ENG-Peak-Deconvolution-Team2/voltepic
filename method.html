@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Method — Peak Deconvolution</title>
+  <meta name="description" content="How a square-wave voltammogram becomes four biomarker decisions: measurement, wavelet denoising, decomposition, standardisation, boosted trees and a threshold — each step computed live.">
+  <meta name="theme-color" content="#f6f5f1">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/pages.css">
+  <script src="assets/js/shell.js"></script>
+  <script type="module" src="assets/js/pages/method.js"></script>
+</head>
+<body class="page-method">
+  <a class="skip" href="#main">Skip to content</a>
+  <pd-nav></pd-nav>
+
+  <main id="main">
+    <header class="page-head">
+      <div class="container">
+        <span class="eyebrow reveal">Method</span>
+        <h1 class="h1 reveal" data-delay="1">From a current trace to a decision, <em>in six steps.</em></h1>
+        <p class="lede reveal" data-delay="2">Scroll through the pipeline. The figure follows you and every number in it is computed here, on a real held-out curve, with the same code the analyzer runs. Pick another curve and the whole walk-through recomputes.</p>
+        <div class="row reveal" data-delay="3" style="margin-top:24px">
+          <span class="small">Example curve</span>
+          <div class="seg" id="exampleSeg" role="radiogroup" aria-label="Example curve"></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="scrolly container" aria-label="Pipeline walk-through">
+      <div class="sc-figure">
+        <figure class="card sc-card">
+          <header class="sc-head">
+            <span class="sc-step mono" id="scStep">01 / 06</span>
+            <span class="sc-title" id="scTitle">A square-wave scan</span>
+          </header>
+          <svg class="viz sc-viz" id="scViz" role="img" aria-label="Pipeline figure"></svg>
+          <figcaption class="sc-cap" id="scCap"></figcaption>
+        </figure>
+        <ol class="sc-progress" id="scProgress" aria-hidden="true"><li></li><li></li><li></li><li></li><li></li><li></li></ol>
+      </div>
+
+      <div class="sc-steps">
+        <article class="sc-text" data-step="0">
+          <span class="eyebrow no-rule">01 · Measure</span>
+          <h2 class="h3">A square-wave scan</h2>
+          <p>The potential steps from 0 to 0.8 V in 4 mV increments with a 25 mV, 5 Hz square wave on top; at each step the instrument records the difference current. That gives 200 numbers per curve — the only input the model ever sees.</p>
+          <p>Each analyte oxidises at its own potential and leaves a peak. On PVDF-coated chips the four peaks sit apart; on P4VP they crowd into roughly 0.13–0.22 V, which is why reading them is not a matter of finding one bump.</p>
+        </article>
+        <article class="sc-text" data-step="1">
+          <span class="eyebrow no-rule">02 · Denoise</span>
+          <h2 class="h3">Noise out, shape kept</h2>
+          <p>The curve is split with a three-level <b>sym4</b> wavelet transform. The finest band is mostly noise, so its median absolute deviation estimates the noise level σ. Every detail coefficient is shrunk towards zero by λ = σ√(2 ln 200) — the universal threshold — and the curve is rebuilt.</p>
+          <p>What is removed is tiny and random; peak heights and positions survive. No blank is subtracted: the model learned from the raw current.</p>
+        </article>
+        <article class="sc-text" data-step="2">
+          <span class="eyebrow no-rule">03 · Decompose</span>
+          <h2 class="h3">Seven views of one curve</h2>
+          <p>A six-level <b>rbio1.3</b> transform splits the denoised curve into seven bands, from the coarse shape (cA6) to the finest wiggles (cD1). Added together, the bands give back the curve exactly.</p>
+          <p>Coarse bands describe where peaks are and how tall; fine bands carry little. Six levels on 200 points is deep enough that the coarsest coefficients feel the ends of the scan — a boundary effect the explanations had to account for.</p>
+        </article>
+        <article class="sc-text" data-step="3">
+          <span class="eyebrow no-rule">04 · Standardise</span>
+          <h2 class="h3">228 numbers</h2>
+          <p>All coefficients of all bands are kept: 8 + 8 + 11 + 17 + 29 + 53 + 102 = 228. Each is converted to a z-score with the mean and spread it had across the 1,114 training curves.</p>
+          <p>A value far outside ±3 means this curve looks unlike the training data in that coefficient. The model has no other notion of "unusual".</p>
+        </article>
+        <article class="sc-text" data-step="4">
+          <span class="eyebrow no-rule">05 · Vote</span>
+          <h2 class="h3">Four forests, built tree by tree</h2>
+          <p>Each analyte has its own <b>LightGBM</b> model: 300 small trees, 31 leaves each, trained one after another so that every tree corrects the ones before it. Each tree reads a few coefficients and adds a small amount to the log-odds.</p>
+          <p>The figure shows that sum as the trees are added. Present analytes climb, absent ones fall; most of the decision is made in the first hundred trees.</p>
+        </article>
+        <article class="sc-text" data-step="5">
+          <span class="eyebrow no-rule">06 · Decide</span>
+          <h2 class="h3">A threshold chosen on training data</h2>
+          <p>The final log-odds become a probability through the logistic function. A curve is called positive for an analyte when that probability reaches the threshold that maximised sensitivity plus specificity on the real training curves — between 0.49995 and 0.50000 for the four models.</p>
+          <p>Four independent decisions: the model can say "ascorbic acid and estradiol, not serotonin" without forcing the answers to agree. Why it decided is the next question.</p>
+          <div class="row" style="margin-top:20px">
+            <a class="btn btn-primary" href="explainability.html">Where the model looks <svg class="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            <a class="btn btn-secondary" id="openInApp" href="app.html">Open this curve in the analyzer</a>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section tight">
+      <div class="container">
+        <div class="bento facts">
+          <div class="tile reveal"><span class="eyebrow no-rule">Input</span><div class="stat num">200<small>points</small></div><p>0.004–0.800 V in 4 mV steps, current as recorded.</p></div>
+          <div class="tile reveal" data-delay="1"><span class="eyebrow no-rule">Features</span><div class="stat num">228<small>coefficients</small></div><p>Full rbio1.3 DWT, six levels, after sym4 denoising.</p></div>
+          <div class="tile reveal" data-delay="2"><span class="eyebrow no-rule">Model</span><div class="stat num">1,200<small>trees</small></div><p>Four LightGBM classifiers of 300 trees, one per analyte.</p></div>
+          <div class="tile reveal" data-delay="3"><span class="eyebrow no-rule">Time</span><div class="stat num" id="timeStat">—</div><p>The whole chain for one curve, measured in this browser.</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <pd-footer></pd-footer>
+</body>
+</html>

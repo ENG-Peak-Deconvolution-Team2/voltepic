@@ -1,213 +1,180 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Peak Deconvolution · Analysis Dashboard</title>
-  <meta name="description" content="Upload a square-wave voltammogram and detect ascorbic acid, serotonin, estradiol and melatonin with an in-browser LightGBM model, with occlusion explanations.">
-  <meta name="theme-color" content="#070c17">
+  <title>Peak Deconvolution — biomarker detection you can check</title>
+  <meta name="description" content="Detect ascorbic acid, serotonin, estradiol and melatonin from one square-wave voltammogram, in your browser, with explanations tested before they were trusted.">
+  <meta property="og:title" content="Peak Deconvolution — biomarker detection you can check">
+  <meta property="og:description" content="Four biomarkers from one voltammogram, with the reasons behind every call. ENG Peak Deconvolution, Team 2.">
+  <meta name="theme-color" content="#f6f5f1">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/css/app.css">
-  <script>
-    try { const t = localStorage.getItem("pd-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
-  </script>
-  <script type="module" src="assets/js/main.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/pages.css">
+  <script src="assets/js/shell.js"></script>
+  <script type="module" src="assets/js/pages/home.js"></script>
 </head>
-<body>
-  <div class="backdrop" aria-hidden="true">
-    <div class="orb orb-a"></div><div class="orb orb-b"></div><div class="orb orb-c"></div>
-    <div class="scope-grid"></div>
-  </div>
+<body class="page-home">
+  <a class="skip" href="#main">Skip to content</a>
+  <pd-nav></pd-nav>
 
-  <a class="skip" href="#main">Skip to analysis</a>
-
-  <header class="topbar">
-    <div class="brand">
-      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-        <defs>
-          <linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7cc4ff"/><stop offset="1" stop-color="#4d6bff"/></linearGradient>
-        </defs>
-        <rect x="1" y="1" width="30" height="30" rx="9" fill="url(#bm)" opacity=".16"/>
-        <path d="M4 23 C8 23 9 9 12 9 C15 9 15 19 17 19 C19 19 19 12 21.5 12 C24 12 25 23 28 23" fill="none" stroke="url(#bm)" stroke-width="2.4" stroke-linecap="round"/>
-      </svg>
-      <div class="brand-text">
-        <span class="brand-name">Peak Deconvolution</span>
-        <span class="brand-sub">Analysis Dashboard · ACS-ML-Biomarker</span>
-      </div>
-    </div>
-
-    <nav class="stepper" aria-label="Analysis steps">
-      <button class="step" data-step="measure" aria-current="step"><span class="step-dot"><span>01</span><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg></span><span class="step-label">Measurement</span></button>
-      <span class="step-rail"><i></i></span>
-      <button class="step" data-step="preprocess"><span class="step-dot"><span>02</span><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg></span><span class="step-label">Preprocess</span></button>
-      <span class="step-rail"><i></i></span>
-      <button class="step" data-step="detect"><span class="step-dot"><span>03</span><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg></span><span class="step-label">Detect</span></button>
-      <span class="step-rail"><i></i></span>
-      <button class="step" data-step="explain"><span class="step-dot"><span>04</span><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg></span><span class="step-label">Explain</span></button>
-    </nav>
-
-    <div class="top-actions">
-      <button class="model-pill" id="modelPill" data-state="loading" aria-haspopup="dialog" title="Open the model card">
-        <span class="pulse"></span><span class="model-pill-text">Loading model…</span>
-      </button>
-      <button class="icon-btn" id="themeToggle" aria-label="Toggle colour theme" title="Toggle theme (T)">
-        <svg class="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-        <svg class="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
-      </button>
-    </div>
-  </header>
-
-  <div class="shell">
-    <!-- ───────────── Sidebar: measurement input ───────────── -->
-    <aside class="sidebar" aria-label="Measurement input">
-      <section class="side-block">
-        <h2 class="side-title">Upload data</h2>
-        <label class="dropzone" id="dropzone" tabindex="0">
-          <input type="file" id="fileInput" accept=".csv,.txt,.tsv,text/csv,text/plain" hidden>
-          <span class="dz-icon" aria-hidden="true">
-            <svg viewBox="0 0 48 48"><path d="M14 6h14l10 10v24a3 3 0 0 1-3 3H14a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3z"/><path d="M28 6v10h10"/><path d="M24 34V22M19 27l5-5 5 5"/></svg>
-          </span>
-          <span class="dz-title">Drag &amp; drop</span>
-          <span class="dz-sub">your voltammogram — CSV or CHI&nbsp;.txt</span>
-        </label>
-        <button class="btn btn-primary btn-block" id="uploadBtn">
-          <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>Upload file
-        </button>
-        <div class="file-chip" id="fileChip" hidden><span class="fc-dot"></span><span class="fc-name"></span></div>
-        <p class="hint">CSV with potential (V) and current (µA), or a raw CHI760F export. Resampled to the model grid: 200 points, 0.004–0.800&nbsp;V. <button class="link" id="exampleCsv">Download an example</button></p>
-      </section>
-
-      <section class="side-block library">
-        <div class="side-head">
-          <h2 class="side-title">Sample library</h2>
-          <button class="chip-btn" id="randomBtn" title="Pick a random held-out curve">
-            <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><circle cx="8.5" cy="8.5" r="1.2"/><circle cx="15.5" cy="15.5" r="1.2"/><circle cx="12" cy="12" r="1.2"/></svg>Random
-          </button>
-        </div>
-        <p class="hint tight">125 held-out curves the model never saw (seed 0 outer test).</p>
-        <div class="search">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
-          <input id="libSearch" type="search" placeholder="Search chip, analyte, nM…" autocomplete="off" aria-label="Search the sample library">
-        </div>
-        <div class="seg seg-sm" id="polyFilter" role="radiogroup" aria-label="Polymer coating">
-          <button role="radio" aria-checked="true" data-v="all">All</button>
-          <button role="radio" aria-checked="false" data-v="P4VP">P4VP</button>
-          <button role="radio" aria-checked="false" data-v="PVDF">PVDF</button>
-        </div>
-        <div class="seg seg-sm" id="mixFilter" role="radiogroup" aria-label="Number of analytes">
-          <button role="radio" aria-checked="true" data-v="all">Any</button>
-          <button role="radio" aria-checked="false" data-v="1">Single</button>
-          <button role="radio" aria-checked="false" data-v="2">Binary</button>
-          <button role="radio" aria-checked="false" data-v="3">3+</button>
-        </div>
-        <ul class="lib-list" id="libList" role="listbox" aria-label="Held-out samples"></ul>
-        <p class="lib-count" id="libCount"></p>
-      </section>
-    </aside>
-
-    <!-- ───────────── Main: signal + steps ───────────── -->
-    <main class="main" id="main">
-      <div class="file-head">
-        <div class="fh-left">
-          <h1 class="fh-name" id="fhName">—</h1>
-          <span class="badge" id="fhStatus" data-tone="idle">Waiting for data</span>
-        </div>
-        <div class="fh-meta" id="fhMeta">LightGBM · 4 heads · 200 points</div>
-      </div>
-
-      <section class="card chart-card" aria-label="Voltammogram">
-        <div class="chart-toolbar">
-          <div class="layer-toggles" id="layerToggles" role="group" aria-label="Chart layers">
-            <button class="layer" data-layer="raw" aria-pressed="true"><i class="sw sw-raw"></i>Measured</button>
-            <button class="layer" data-layer="denoised" aria-pressed="true"><i class="sw sw-den"></i>Denoised</button>
-            <button class="layer" data-layer="blank" aria-pressed="false"><i class="sw sw-blank"></i>Blank</button>
-            <button class="layer" data-layer="xai" aria-pressed="true"><i class="sw sw-xai"></i>Key regions</button>
+  <main id="main">
+    <!-- ───────────── Hero ───────────── -->
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow reveal">ENG Peak Deconvolution · Team 2 · machine learning</span>
+          <h1 class="display reveal" data-delay="1">Four biomarkers, <em>one scan</em> — and the reason behind every call.</h1>
+          <p class="lede reveal" data-delay="2">Ascorbic acid, serotonin, estradiol and melatonin, detected from a single square-wave voltammogram. Trained on 1,114 curves, checked on 125 it never saw, and explained with the methods that passed our own tests.</p>
+          <div class="row hero-ctas reveal" data-delay="3">
+            <a class="btn btn-primary btn-lg" href="app.html">Open the analyzer <svg class="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            <a class="btn btn-secondary btn-lg" href="method.html">How it works</a>
           </div>
-          <div class="chart-tools">
-            <span class="chart-caption" id="chartCaption"></span>
-            <button class="icon-btn sm" id="exportCsv" title="Export the processed curve as CSV" aria-label="Export processed curve as CSV">
-              <svg viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></svg>
-            </button>
+          <ul class="hero-facts reveal" data-delay="4">
+            <li><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>Runs in your browser — nothing is uploaded</li>
+            <li><svg viewBox="0 0 24 24"><path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path d="M14 3.5V8h4"/></svg>CSV or raw CHI760F files</li>
+          </ul>
+        </div>
+
+        <div class="hero-visual reveal" data-delay="2">
+          <article class="readout" aria-label="Live readout of held-out curves">
+            <header class="ro-head">
+              <span class="ro-live"><span class="ro-pulse"></span>Live readout</span>
+              <span class="ro-id mono" id="roId">loading…</span>
+            </header>
+            <div class="ro-chart">
+              <svg class="viz" id="roChart" role="img" aria-label="Voltammogram with the windows the model relies on"></svg>
+              <div class="ro-axis mono"><span>0.0 V</span><span>potential</span><span>0.8 V</span></div>
+            </div>
+            <ul class="ro-rows" id="roRows"></ul>
+            <footer class="ro-foot">
+              <div class="ro-dots" id="roDots" aria-hidden="true"></div>
+              <span class="ro-note" id="roNote">Real held-out curves · shading: where the model looks</span>
+            </footer>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Numbers ───────────── -->
+    <section class="section tight">
+      <div class="container">
+        <div class="bento numbers">
+          <div class="tile reveal"><div class="stat num">1,239<small>curves</small></div><p>ACS-ML-Biomarker: 455 measurement blocks on P4VP- and PVDF-coated chips, four analytes, alone and in mixtures.</p></div>
+          <div class="tile reveal" data-delay="1"><div class="stat num">125<small>held out</small></div><p>Curves from 46 blocks the model never saw in training. The library in the analyzer is exactly this set.</p></div>
+          <div class="tile reveal" data-delay="2"><div class="stat num" id="accStat">—</div><p>Held-out accuracy across the four analytes, recomputed in your browser from the stored predictions.</p></div>
+          <div class="tile reveal" data-delay="3"><div class="stat num">0<small>/ 500</small></div><p>Decisions that differ between this page and the Python model it was exported from.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Pipeline ───────────── -->
+    <section class="section" id="pipeline">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">How a decision is made</span>
+          <h2 class="h2 reveal" data-delay="1">From a current trace to four answers, <em>in under a millisecond.</em></h2>
+          <p class="lede reveal" data-delay="2">Every step below is computed live from one held-out curve, with the same code the analyzer uses.</p>
+        </div>
+        <ol class="steps" id="steps">
+          <li class="step reveal"><span class="step-n mono">01</span><svg class="viz step-viz" data-viz="raw"></svg><h3 class="h4">Measure</h3><p>Square-wave voltammetry, 0.004–0.800 V in 4 mV steps: 200 currents.</p></li>
+          <li class="step reveal" data-delay="1"><span class="step-n mono">02</span><svg class="viz step-viz" data-viz="noise"></svg><h3 class="h4">Denoise</h3><p>A wavelet threshold removes the noise and keeps the peak shape.</p></li>
+          <li class="step reveal" data-delay="2"><span class="step-n mono">03</span><svg class="viz step-viz" data-viz="bands"></svg><h3 class="h4">Decompose</h3><p>Seven wavelet bands, 228 coefficients, from coarse shape to fine detail.</p></li>
+          <li class="step reveal" data-delay="3"><span class="step-n mono">04</span><svg class="viz step-viz" data-viz="trees"></svg><h3 class="h4">Vote</h3><p>Four boosted forests, 300 trees each, build up the evidence tree by tree.</p></li>
+          <li class="step reveal" data-delay="4"><span class="step-n mono">05</span><svg class="viz step-viz" data-viz="decide"></svg><h3 class="h4">Decide</h3><p>Each probability is compared with a threshold chosen on training data.</p></li>
+        </ol>
+        <div class="row section-foot reveal"><a class="btn btn-secondary" href="method.html">Walk through the method <svg class="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+      </div>
+    </section>
+
+    <!-- ───────────── Where it looks ───────────── -->
+    <section class="section where">
+      <div class="container split">
+        <div class="stack">
+          <span class="eyebrow reveal">Explainability</span>
+          <h2 class="h2 reveal" data-delay="1">It looks <em>where the peaks are.</em></h2>
+          <p class="body-lg reveal" data-delay="2">Shuffle one 20 mV window across all held-out curves and measure how much worse the model gets: that is permutation importance, the most reliable of the four explanation methods we tested. On PVDF, the single most important window of each analyte sits inside that analyte's peak window.</p>
+          <ul class="peak-list reveal" data-delay="3" id="peakList"></ul>
+          <div class="row reveal" data-delay="4"><a class="btn btn-secondary" href="explainability.html">How we tested the explanations <svg class="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+        </div>
+        <figure class="figure card card-pad reveal" data-delay="1">
+          <div class="card-head"><span class="card-title">Permutation importance per window · PVDF</span><span class="badge">this model</span></div>
+          <div class="legend" id="pfiLegend"></div>
+          <svg class="viz" id="pfiChart" role="img" aria-label="Permutation importance per 20 mV window for the four analytes, with their peak windows"></svg>
+          <figcaption>Each line is scaled to its own maximum. Bars under the axis: peak windows from the E3 test (blank-subtracted single-analyte means, PVDF).</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ───────────── Evidence ───────────── -->
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Built to be checked</span>
+          <h2 class="h2 reveal" data-delay="1">Claims you can <em>verify on this site.</em></h2>
+        </div>
+        <div class="bento evidence">
+          <a class="tile ev reveal" href="model.html#parity">
+            <svg class="ev-icon" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>
+            <h3 class="h3">Same answers as Python</h3>
+            <p>The wavelet transform and the 1,200 trees were reimplemented in JavaScript. On every page load the analyzer re-checks all 500 held-out decisions against the Python reference.</p>
+            <span class="ev-link">Reference check →</span>
+          </a>
+          <a class="tile ev reveal" data-delay="1" href="explainability.html#tests">
+            <svg class="ev-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3 2"/></svg>
+            <h3 class="h3">Explanations under test</h3>
+            <p>Four methods, five tests: does the map hold when you delete what it highlights, does it stay stable, does it sit on the peak, does it chase artefacts, does it vanish for a model that learned nothing?</p>
+            <span class="ev-link">The five tests →</span>
+          </a>
+          <a class="tile ev reveal" data-delay="2" href="model.html#limits">
+            <svg class="ev-icon" viewBox="0 0 24 24"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17h.01"/></svg>
+            <h3 class="h3">Honest about limits</h3>
+            <p>One fitted model and one partition; replicates share a block; the model has only seen these chips and this instrument, and it cannot tell when a curve is from somewhere else.</p>
+            <span class="ev-link">Model card →</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Assistant ───────────── -->
+    <section class="section">
+      <div class="container split">
+        <div class="stack">
+          <span class="eyebrow reveal">Analysis assistant · preview</span>
+          <h2 class="h2 reveal" data-delay="1">Ask the analysis <em>in plain words.</em></h2>
+          <p class="body-lg reveal" data-delay="2">The analyzer answers questions about the curve in front of you — what was found, how sure the model is, which windows mattered — using only the numbers it computed. Today the answers are scripted; a language model will take over the same panel.</p>
+          <div class="row reveal" data-delay="3"><a class="btn btn-secondary" href="app.html#ask">Try the assistant <svg class="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+        </div>
+        <div class="chat-demo card reveal" data-delay="1" aria-label="Example conversation">
+          <div class="cd-head"><span class="card-title">Assistant</span><span class="badge" data-tone="warn">Demo</span></div>
+          <div class="cd-msg user">Which regions influenced the prediction?</div>
+          <div class="cd-msg bot">Ascorbic acid: <b>0.24–0.26 V</b>, adding <span class="mono">+3.0</span> log-odds, inside its peak window. Estradiol: <b>0.50–0.52 V</b> (<span class="mono">+2.9</span>). Melatonin: <b>0.72–0.74 V</b> (<span class="mono">+2.7</span>).</div>
+          <div class="cd-msg user">How confident is the model?</div>
+          <div class="cd-msg bot typing"><i></i><i></i><i></i></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── CTA ───────────── -->
+    <section class="section tight">
+      <div class="container">
+        <div class="cta-band reveal">
+          <div>
+            <h2 class="h2">Bring a measurement.</h2>
+            <p>Drop a CSV or a raw CHI760F export into the analyzer, or start from one of the 125 held-out curves.</p>
+          </div>
+          <div class="row">
+            <a class="btn btn-lg cta-primary" href="app.html#upload">Upload a file</a>
+            <a class="btn btn-lg cta-ghost" href="app.html#s=random">Random held-out curve</a>
           </div>
         </div>
-        <div class="chart-wrap" id="chartWrap">
-          <svg class="chart" id="chart" role="img" aria-label="Square-wave voltammogram"></svg>
-          <div class="chart-empty" id="chartEmpty"><div class="spinner"></div><span>Loading model and sample library…</span></div>
-        </div>
-      </section>
-
-      <div class="action-bar">
-        <button class="btn btn-primary btn-lg" id="analyzeBtn" disabled>
-          <svg viewBox="0 0 24 24"><path d="M5 12h3l2-6 4 12 2-6h3"/></svg><span>Analyze</span><kbd>A</kbd>
-        </button>
-        <button class="btn btn-ghost btn-lg" id="resetBtn" disabled>Reset</button>
-        <button class="btn btn-outline btn-lg" id="explainBtn" disabled>
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg><span>Explain prediction</span><kbd>E</kbd>
-        </button>
-        <div class="run-timer" id="runTimer" aria-live="polite"></div>
       </div>
+    </section>
+  </main>
 
-      <section class="card step-card" aria-live="polite">
-        <div class="step-panel" data-panel="measure" id="panelMeasure"></div>
-        <div class="step-panel" data-panel="preprocess" id="panelPreprocess" hidden></div>
-        <div class="step-panel" data-panel="detect" id="panelDetect" hidden></div>
-        <div class="step-panel" data-panel="explain" id="panelExplain" hidden></div>
-      </section>
-    </main>
-
-    <!-- ───────────── Right: results + assistant ───────────── -->
-    <aside class="rightcol" aria-label="Results and assistant">
-      <section class="card results-card">
-        <div class="card-head">
-          <h2>Prediction results</h2>
-          <span class="badge" id="resBadge" data-tone="idle">Pending</span>
-        </div>
-        <div class="res-table" role="table" aria-label="Detection results">
-          <div class="res-row res-headrow" role="row">
-            <span role="columnheader">Analyte</span><span role="columnheader">Status</span><span role="columnheader">Label</span><span role="columnheader">P(present)</span>
-          </div>
-          <div id="resRows"></div>
-        </div>
-        <p class="res-foot"><span class="legend-det">✓ Detected</span><span class="legend-not">– Not detected</span><span class="res-thr" id="resThr"></span></p>
-      </section>
-
-      <section class="card chat-card">
-        <div class="card-head">
-          <h2>Analysis assistant</h2>
-          <span class="badge" data-tone="demo" title="Responses are generated from the current analysis by rules; an LLM will be integrated later">Demo</span>
-        </div>
-        <div class="chat-log" id="chatLog" aria-live="polite"></div>
-        <div class="chat-suggest" id="chatSuggest"></div>
-        <form class="chat-input" id="chatForm" autocomplete="off">
-          <input id="chatText" type="text" placeholder="Ask about this analysis" aria-label="Ask the assistant">
-          <button class="btn btn-primary" type="submit">Send</button>
-        </form>
-      </section>
-    </aside>
-  </div>
-
-  <footer class="footer">
-    <div>Data: <a href="https://github.com/esemsc-ald24/ML-Biomarker-Sensing" target="_blank" rel="noopener">ML-Biomarker-Sensing</a> (Duesselberg et&nbsp;al., <i>ACS Electrochem.</i> 2 (2026) 1444–1452), MIT licence.</div>
-    <div class="footer-links"><button class="link" id="footerCard">Model card &amp; reference check</button><span>·</span><span>ENG Peak Deconvolution · Team 2</span><span>·</span><span>Runs entirely in your browser — no data leaves this page</span></div>
-  </footer>
-
-  <dialog class="modal" id="modelCard" aria-labelledby="mcTitle">
-    <div class="modal-inner">
-      <div class="modal-head">
-        <div>
-          <p class="eyebrow">Model card</p>
-          <h2 id="mcTitle">Detection model</h2>
-        </div>
-        <button class="icon-btn" id="mcClose" aria-label="Close model card"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-      </div>
-      <div class="modal-body" id="mcBody"></div>
-    </div>
-  </dialog>
-
-  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
-  <div class="toasts" id="toasts" aria-live="assertive"></div>
+  <pd-footer></pd-footer>
 </body>
 </html>

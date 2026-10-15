@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>About — Peak Deconvolution</title>
+  <meta name="description" content="Part of the ENG Peak Deconvolution project: Team 2's machine-learning web interface, the team, and the data it builds on.">
+  <meta property="og:title" content="About — Peak Deconvolution">
+  <meta property="og:description" content="Team 2's web interface for the ENG Peak Deconvolution project.">
+  <meta name="theme-color" content="#f6f5f1">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/pages.css">
+  <link rel="stylesheet" href="assets/css/page-about.css">
+  <script src="assets/js/shell.js"></script>
+  <script type="module">import "./assets/js/site.js";</script>
+</head>
+<body class="page-about">
+  <a class="skip" href="#main">Skip to content</a>
+  <pd-nav></pd-nav>
+
+  <main id="main">
+    <header class="page-head">
+      <div class="container">
+        <span class="eyebrow reveal">About</span>
+        <h1 class="h1 reveal" data-delay="1">Part of <em>ENG Peak Deconvolution.</em></h1>
+        <p class="lede reveal" data-delay="2">An engineering design project on reading analyte information from voltammetric signals with overlapping peaks. Two teams work on the same data, splits and metrics — Team 1 with deep learning, Team 2 with classical machine learning. This site is Team 2's web interface (work package 6).</p>
+      </div>
+    </header>
+
+    <!-- ───────────── Work packages ───────────── -->
+    <section class="section tight">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Work packages</span>
+          <h2 class="h2 reveal" data-delay="1">Six pieces, <em>three of them here.</em></h2>
+        </div>
+        <ol class="wps">
+          <li class="wp card reveal"><span class="wp-n mono">WP1</span><h3 class="h4">Local Dataset Acquisition</h3></li>
+          <li class="wp card reveal" data-delay="1"><span class="wp-n mono">WP2</span><h3 class="h4">Existing Dataset Preparation and Preprocessing</h3></li>
+          <li class="wp card here reveal" data-delay="2"><span class="wp-n mono">WP3</span><h3 class="h4">Model Development and Evaluation</h3><p>The detection model and its held-out results.</p><div class="wp-foot"><span class="badge" data-tone="accent">on this site</span><a class="link" href="model.html">Model card →</a></div></li>
+          <li class="wp card reveal" data-delay="1"><span class="wp-n mono">WP4</span><h3 class="h4">Model Adaptation and Evaluation on Local Data</h3></li>
+          <li class="wp card here reveal" data-delay="2"><span class="wp-n mono">WP5</span><h3 class="h4">Explainable AI (XAI)</h3><p>Four explanation methods, tested before they were trusted.</p><div class="wp-foot"><span class="badge" data-tone="accent">on this site</span><a class="link" href="explainability.html">Explainability →</a></div></li>
+          <li class="wp card here reveal" data-delay="3"><span class="wp-n mono">WP6</span><h3 class="h4">Web Interface Development and Integration</h3><p>This site: analyzer, method, model card.</p><div class="wp-foot"><span class="badge" data-tone="accent">on this site</span><a class="link" href="app.html">Analyzer →</a></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ───────────── Team ───────────── -->
+    <section class="section tight">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Team 2 · machine learning</span>
+          <h2 class="h2 reveal" data-delay="1">Who <em>built it.</em></h2>
+        </div>
+        <div class="team">
+          <article class="card card-pad member reveal"><span class="avatar" aria-hidden="true">HB</span><div><h3 class="h3">Hıba Berchane</h3><p>Biomedical Engineering</p></div></article>
+          <article class="card card-pad member reveal" data-delay="1"><span class="avatar" aria-hidden="true">HO</span><div><h3 class="h3">Hasan Oruçlar</h3><p>Electrical &amp; Electronics Engineering</p></div></article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Links and credit ───────────── -->
+    <section class="section tight">
+      <div class="container split top">
+        <div class="stack">
+          <span class="eyebrow reveal">Links</span>
+          <h2 class="h2 reveal" data-delay="1">Find the <em>rest.</em></h2>
+          <ul class="links reveal" data-delay="2">
+            <li><a class="tile" href="https://eng-peak-deconvolution-team2.github.io/project-dashboard/" target="_blank" rel="noopener"><span><b>Team dashboard</b><small class="mono">eng-peak-deconvolution-team2.github.io/project-dashboard</small></span><svg viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></svg></a></li>
+            <li><a class="tile" href="https://github.com/ENG-Peak-Deconvolution-Team2/analysis-dashboard" target="_blank" rel="noopener"><span><b>Source code</b><small class="mono">github.com/ENG-Peak-Deconvolution-Team2/analysis-dashboard</small></span><svg viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></svg></a></li>
+          </ul>
+        </div>
+        <div class="stack">
+          <span class="eyebrow reveal">Data credit</span>
+          <div class="card card-pad reveal" data-delay="1">
+            <p class="body-lg">ML-Biomarker-Sensing, Duesselberg et al., <i>ACS Electrochem.</i> <b>2</b> (2026) 1444–1452, MIT licence.</p>
+          </div>
+          <div class="note reveal" data-delay="2">
+            <svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>
+            <div>Everything runs in your browser; no measurement leaves the page.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <pd-footer></pd-footer>
+</body>
+</html>

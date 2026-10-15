@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dataset — Peak Deconvolution</title>
+  <meta name="description" content="The ACS-ML-Biomarker data set behind the model: 1,239 square-wave voltammograms, four analytes, two polymer coatings, and the 125 held-out curves of the analyzer library.">
+  <meta property="og:title" content="Dataset — Peak Deconvolution">
+  <meta property="og:description" content="1,239 curves, four analytes, two coatings, and how the data is split.">
+  <meta name="theme-color" content="#f6f5f1">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/pages.css">
+  <link rel="stylesheet" href="assets/css/page-data.css">
+  <script src="assets/js/shell.js"></script>
+  <script type="module" src="assets/js/pages/data.js"></script>
+</head>
+<body class="page-data">
+  <a class="skip" href="#main">Skip to content</a>
+  <pd-nav></pd-nav>
+
+  <main id="main">
+    <!-- ───────────── Page head ───────────── -->
+    <header class="page-head">
+      <div class="container">
+        <span class="eyebrow reveal">Dataset</span>
+        <h1 class="h1 reveal" data-delay="1">1,239 curves, <em>four analytes, two coatings.</em></h1>
+        <p class="lede reveal" data-delay="2">The ACS-ML-Biomarker data set (ML-Biomarker-Sensing): square-wave voltammograms of ascorbic acid, serotonin, estradiol and melatonin, alone and in mixtures, measured on polymer-coated chips. This page shows what was measured, how we split it, and the 125 held-out curves the analyzer ships with.</p>
+        <nav class="toc reveal" data-delay="3" aria-label="On this page">
+          <a href="#source">Source</a>
+          <a href="#measured">What was measured</a>
+          <a href="#cohort">Cohort</a>
+          <a href="#coatings">Two coatings</a>
+          <a href="#split">How it is split</a>
+          <a href="#library">Held-out library</a>
+          <a href="#gallery">Gallery</a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- ───────────── Source ───────────── -->
+    <section class="section tight" id="source">
+      <div class="container split top">
+        <div class="stack">
+          <span class="eyebrow reveal">Source</span>
+          <h2 class="h2 reveal" data-delay="1">Published data, <em>open licence.</em></h2>
+          <p class="body-lg reveal" data-delay="2">We did not measure these curves. They come from a published study and its public repository; we use the raw measurement files and nothing derived from them.</p>
+        </div>
+        <div class="card card-pad reveal" data-delay="1">
+          <div class="card-head"><span class="card-title">Reference</span><span class="badge" data-tone="info">MIT licence</span></div>
+          <p class="cite">Duesselberg A. L. M., Weber I. C., Zosso Y., Salah P., Bao Z. <em>Machine Learning-Driven Multiplexed Biomarker Detection with Polymer-Enhanced Electrochemical Sensors.</em> ACS Electrochemistry <b>2</b> (2026) 1444–1452.</p>
+          <dl class="kv">
+            <div><dt>DOI</dt><dd><a class="link" href="https://doi.org/10.1021/acselectrochem.6c00079" target="_blank" rel="noopener">10.1021/acselectrochem.6c00079</a></dd></div>
+            <div><dt>Repository</dt><dd><a class="link" href="https://github.com/esemsc-ald24/ML-Biomarker-Sensing" target="_blank" rel="noopener">esemsc-ald24/ML-Biomarker-Sensing</a></dd></div>
+            <div><dt>Licence</dt><dd>MIT</dd></div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── What was measured ───────────── -->
+    <section class="section" id="measured">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">What was measured</span>
+          <h2 class="h2 reveal" data-delay="1">One scan is <em>200 currents.</em></h2>
+        </div>
+        <div class="split top">
+          <div class="card card-pad reveal">
+            <div class="card-head"><span class="card-title">Acquisition</span><span class="badge">CHI760F</span></div>
+            <dl class="kv">
+              <div><dt>Technique</dt><dd>square-wave voltammetry</dd></div>
+              <div><dt>Instrument</dt><dd>CHI760F</dd></div>
+              <div><dt>Potential window</dt><dd>0 → 0.8 V</dd></div>
+              <div><dt>Recorded grid</dt><dd>0.004–0.800 V</dd></div>
+              <div><dt>Step</dt><dd>4 mV · 200 points</dd></div>
+              <div><dt>Amplitude</dt><dd>25 mV</dd></div>
+              <div><dt>Frequency</dt><dd>5 Hz</dd></div>
+              <div><dt>Quiet time</dt><dd>60 s</dd></div>
+              <div><dt>Current</dt><dd>recorded in A, shown in µA / nA</dd></div>
+            </dl>
+          </div>
+          <div class="stack">
+            <div class="card card-pad reveal" data-delay="1">
+              <div class="card-head"><span class="card-title">Analytes</span></div>
+              <ul class="an-list" id="anList"></ul>
+            </div>
+            <div class="note reveal" data-delay="2">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg>
+              <div>Each raw file carries two working-electrode columns, <b>i1</b> and <b>i2</b>. The source documentation calls i2 a reverse current; measured, it is a second working electrode (median Pearson <i>r</i> = 0.992 between the two).</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Cohort ───────────── -->
+    <section class="section tight" id="cohort">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Cohort used here</span>
+          <h2 class="h2 reveal" data-delay="1">1,239 curves in <em>455 blocks.</em></h2>
+          <p class="lede reveal" data-delay="2">A block is the replicate measurements of one mixture, on one chip, on one day. Splits never cut through a block, so replicates of a curve are never on both sides of a train–test line.</p>
+        </div>
+        <div class="bento cohort">
+          <div class="tile reveal"><div class="stat num">1,239<small>curves</small></div><p>Square-wave voltammograms in the cohort.</p></div>
+          <div class="tile reveal" data-delay="1"><div class="stat num">455<small>blocks</small></div><p>One mixture, one chip, one day each.</p></div>
+          <div class="tile reveal" data-delay="2"><div class="stat num">659<small>P4VP</small></div><p>Curves on P4VP-coated chips.</p></div>
+          <div class="tile reveal" data-delay="3"><div class="stat num">580<small>PVDF</small></div><p>Curves on PVDF-coated chips.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Two coatings ───────────── -->
+    <section class="section" id="coatings">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Two coatings</span>
+          <h2 class="h2 reveal" data-delay="1">Same analytes, <em>very different curves.</em></h2>
+          <p class="lede reveal" data-delay="2">On PVDF the single-analyte peaks are separated, so a peak window can be drawn for each analyte. On P4VP all four crowd into roughly 0.13–0.22 V.</p>
+        </div>
+        <div class="split top">
+          <figure class="figure card card-pad reveal">
+            <div class="card-head"><span class="card-title">PVDF · mean training curve</span><span class="badge">peaks separated</span></div>
+            <div class="legend" id="pvdfLegend"></div>
+            <svg class="viz" id="pvdfChart" role="img" aria-label="Mean training curve on PVDF with the four peak windows"></svg>
+            <figcaption>Dashed outlines: peak windows of the single analytes from the XAI E3 test (centres AA 0.244, 5-HT 0.392, 2E 0.508, Mela 0.632 V). Current scaled to 0–1.</figcaption>
+          </figure>
+          <figure class="figure card card-pad reveal" data-delay="1">
+            <div class="card-head"><span class="card-title">P4VP · mean training curve</span><span class="badge" data-tone="warn">peaks crowded</span></div>
+            <div class="legend"><span class="plain"><i class="dash" style="--c:var(--ink-2)"></i>roughly 0.13–0.22 V: where all four analyte peaks fall</span></div>
+            <svg class="viz" id="p4vpChart" role="img" aria-label="Mean training curve on P4VP with the crowded peak region"></svg>
+            <figcaption>On P4VP the XAI E3 test could not define peak windows. Current scaled to 0–1 per coating; both curves are the block-weighted mean of the training set.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Split ───────────── -->
+    <section class="section" id="split">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">How the data is split</span>
+          <h2 class="h2 reveal" data-delay="1">Blocks are split, <em>never curves.</em></h2>
+          <p class="lede reveal" data-delay="2">The outer split follows the source repository's own random draw: its GroupShuffleSplit, reproduced on the repository's frame and then carried over to our cohort.</p>
+        </div>
+        <div class="flow card card-pad reveal">
+          <div class="flow-row">
+            <span class="flow-tag mono">1 · all blocks</span>
+            <div class="bar"><span class="seg-all" style="flex:455"><b>455 blocks</b><i>1,239 curves</i></span></div>
+          </div>
+          <div class="flow-arrow" aria-hidden="true">↓ outer split, 90 / 10 by block</div>
+          <div class="flow-row">
+            <span class="flow-tag mono">2 · per seed</span>
+            <div class="bar"><span class="seg-train" style="flex:409"><b>409 training blocks</b><i>seed 0: 1,114 curves</i></span><span class="seg-hold" style="flex:46"><b>46</b><i>held out</i></span></div>
+          </div>
+          <div class="flow-arrow" aria-hidden="true">↓ inner 5-fold GroupKFold on the training part, for model selection</div>
+          <div class="flow-row">
+            <span class="flow-tag mono">3 · inner folds</span>
+            <div class="folds">
+              <div class="fold"><i></i><i></i><i></i><i></i><i data-v></i><span class="mono">fold 1</span></div>
+              <div class="fold"><i></i><i></i><i></i><i data-v></i><i></i><span class="mono">fold 2</span></div>
+              <div class="fold"><i></i><i></i><i data-v></i><i></i><i></i><span class="mono">fold 3</span></div>
+              <div class="fold"><i></i><i data-v></i><i></i><i></i><i></i><span class="mono">fold 4</span></div>
+              <div class="fold"><i data-v></i><i></i><i></i><i></i><i></i><span class="mono">fold 5</span></div>
+            </div>
+          </div>
+          <div class="flow-legend legend">
+            <span><i class="box" style="--c:var(--ink)"></i>training</span>
+            <span><i class="box" style="--c:var(--warning)"></i>validation (inner folds) / held out (outer)</span>
+          </div>
+        </div>
+        <div class="bento split-facts">
+          <div class="tile reveal"><div class="stat num">5<small>seeds</small></div><p class="mono">0 · 42 · 1337 · 2023 · 9999</p></div>
+          <div class="tile reveal" data-delay="1"><div class="stat num">409 / 46<small>blocks</small></div><p>Training and held-out blocks per seed.</p></div>
+          <div class="tile reveal" data-delay="2"><div class="stat num">1,114 / 125<small>curves</small></div><p>Training and held-out curves for seed 0.</p></div>
+          <div class="tile reveal" data-delay="3"><div class="stat num">seed 0</div><p>The site's model is the seed-0 outer model; the library is its 125 held-out curves.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Held-out library ───────────── -->
+    <section class="section" id="library">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">The held-out library</span>
+          <h2 class="h2 reveal" data-delay="1">125 curves <em>the model never saw.</em></h2>
+          <p class="lede reveal" data-delay="2">Everything below is computed from the library file the analyzer loads.</p>
+        </div>
+        <div class="bento lib-counts" id="libCounts"></div>
+        <figure class="figure card card-pad reveal dotplot">
+          <div class="card-head"><span class="card-title">Concentrations present, per analyte</span><span class="badge">one dot per curve</span></div>
+          <div class="legend" id="dotLegend"></div>
+          <svg class="viz" id="dotChart" role="img" aria-label="Concentration of each analyte in each held-out curve, on a logarithmic nM axis"></svg>
+          <figcaption>Only curves in which the analyte is present are drawn; the axis is logarithmic. Hover a dot for its file name.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ───────────── Gallery ───────────── -->
+    <section class="section" id="gallery">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Gallery</span>
+          <h2 class="h2 reveal" data-delay="1">Every held-out curve, <em>at a glance.</em></h2>
+          <p class="lede reveal" data-delay="2">Open any card in the analyzer to see the prediction and the reasons behind it.</p>
+        </div>
+        <div class="gal-bar reveal">
+          <div class="gal-f"><span class="gal-l">Coating</span>
+            <div class="seg" role="radiogroup" aria-label="Coating" id="fPoly">
+              <button role="radio" aria-checked="true" data-v="all">All</button>
+              <button role="radio" aria-checked="false" data-v="P4VP">P4VP</button>
+              <button role="radio" aria-checked="false" data-v="PVDF">PVDF</button>
+            </div></div>
+          <div class="gal-f"><span class="gal-l">Analytes</span>
+            <div class="seg" role="radiogroup" aria-label="Number of analytes" id="fCount">
+              <button role="radio" aria-checked="true" data-v="any">Any</button>
+              <button role="radio" aria-checked="false" data-v="1">1</button>
+              <button role="radio" aria-checked="false" data-v="2">2</button>
+              <button role="radio" aria-checked="false" data-v="3">3+</button>
+            </div></div>
+          <span class="gal-n mono" id="galN" aria-live="polite"></span>
+        </div>
+        <div class="gal" id="gal"></div>
+      </div>
+    </section>
+  </main>
+
+  <pd-footer></pd-footer>
+</body>
+</html>

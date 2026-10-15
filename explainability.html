@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Explainability — Peak Deconvolution</title>
+  <meta name="description" content="Where the detection model looks, and how the explanations were tested: four methods, five tests, and what the analyzer uses as a result.">
+  <meta name="theme-color" content="#f6f5f1">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/pages.css">
+  <script src="assets/js/shell.js"></script>
+  <script type="module" src="assets/js/pages/explain.js"></script>
+</head>
+<body class="page-explain">
+  <a class="skip" href="#main">Skip to content</a>
+  <pd-nav></pd-nav>
+
+  <main id="main">
+    <header class="page-head">
+      <div class="container">
+        <span class="eyebrow reveal">Explainability · ENG work package 5</span>
+        <h1 class="h1 reveal" data-delay="1">Where the model looks, <em>and how we checked.</em></h1>
+        <p class="lede reveal" data-delay="2">An explanation is a claim about the model, so we tested it like one. Four methods produced maps of where the detector looks; five tests asked whether those maps are faithful, stable, on the peak, free of artefacts, and tied to what the model learned. The analyzer shows the methods that held up.</p>
+        <nav class="toc reveal" data-delay="3" aria-label="On this page">
+          <a href="#questions">Two questions</a><a href="#methods">Four methods</a><a href="#tests">Five tests</a><a href="#looks">Where it looks</a><a href="#edges">The edges</a><a href="#analyzer">In the analyzer</a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- ───────────── Headline findings ───────────── -->
+    <section class="section tight">
+      <div class="container">
+        <ol class="findings" id="findings">
+          <li class="reveal"><span class="mono">01</span><div><b>The maps reflect learning.</b> The models score 0.98–0.99; a model retrained on shuffled labels gets maps unrelated to the real one, for all four methods.</div></li>
+          <li class="reveal" data-delay="1"><span class="mono">02</span><div><b>PFI is the most reliable.</b> It sits on the peak for 4 of 4 analytes, is the most stable across models (0.89) and shows no edge bias.</div></li>
+          <li class="reveal" data-delay="2"><span class="mono">03</span><div><b>The other three depend on the fill.</b> Occlusion, SHAP and SAGE are faithful when tested with their own fill, but the map changes when the fill changes.</div></li>
+          <li class="reveal" data-delay="3"><span class="mono">04</span><div><b>"On the peak" is the weak spot.</b> No method sits firmly on the peak window (best 0.50); on P4VP no peak window can even be defined.</div></li>
+          <li class="reveal" data-delay="4"><span class="mono">05</span><div><b>The edges carry real information.</b> 9–20% of the model's split gain sits on coefficients that only see the ends of the scan.</div></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ───────────── Two questions ───────────── -->
+    <section class="section" id="questions">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Two questions</span>
+          <h2 class="h2 reveal" data-delay="1">Is the explanation true to the model, <em>or true to chemistry?</em></h2>
+          <p class="lede reveal" data-delay="2">They sound alike and are often mixed up. A map can match chemistry and still misdescribe the model, or describe the model faithfully and contradict chemistry.</p>
+        </div>
+        <div class="bento two-q">
+          <div class="tile reveal"><span class="badge" data-tone="accent">Question A · asked here</span><h3 class="h3" style="margin-top:14px">Why did the model decide this?</h3><p>Faithfulness and stability: does the map reflect what the model actually uses, and does it stay the same when the model is retrained? This is what work package 5 measures.</p></div>
+          <div class="tile reveal" data-delay="1"><span class="badge">Question B · read alongside</span><h3 class="h3" style="margin-top:14px">Does the evidence agree with what we know?</h3><p>Plausibility: does the map point at the analyte's known peak? We have that outside reference for PVDF — single-analyte peak windows — so the E3 test reads the maps against it. A match is a hint, not a proof of chemistry.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Methods ───────────── -->
+    <section class="section" id="methods">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Four methods</span>
+          <h2 class="h2 reveal" data-delay="1">Four ways to ask <em>where it looked.</em></h2>
+          <p class="lede reveal" data-delay="2">All four treat a 20 or 40 mV window of the curve as one player. Two explain a single curve, two explain the model as a whole. Three of them must replace a window with something — the fill — and that choice turns out to matter.</p>
+        </div>
+        <div class="bento methods">
+          <article class="tile reveal"><div class="m-top"><h3 class="h3">Occlusion</h3><span class="badge">this curve</span></div><p>Replace one window, re-score the curve, record how much the probability drops.</p><p class="m-plain">Cover part of a photo and see whether the answer changes.</p><p class="m-fill"><span>Fill</span>zero · training mean · blank · straight line</p></article>
+          <article class="tile reveal" data-delay="1"><div class="m-top"><h3 class="h3">KernelSHAP</h3><span class="badge">this curve</span></div><p>Share the step from a reference curve to this curve fairly among the windows, over many combinations of windows.</p><p class="m-plain">Split a team's score fairly among its players.</p><p class="m-fill"><span>Fill</span>the same four, as the reference for absent windows</p></article>
+          <article class="tile reveal" data-delay="2"><div class="m-top"><h3 class="h3">Grouped PFI</h3><span class="badge" data-tone="accent">whole model</span></div><p>Shuffle one window across all held-out curves and measure how much worse the predictions get.</p><p class="m-plain">Swap one ingredient between dishes and see which dishes suffer.</p><p class="m-fill"><span>Fill</span>none — real values from other curves</p></article>
+          <article class="tile reveal" data-delay="3"><div class="m-top"><h3 class="h3">SAGE</h3><span class="badge" data-tone="accent">whole model</span></div><p>Share the model's accuracy fairly among the windows, averaged over curves.</p><p class="m-plain">Ask which players win matches, not which scored in one game.</p><p class="m-fill"><span>Fill</span>the same four fills</p></article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Tests ───────────── -->
+    <section class="section" id="tests">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">Five tests</span>
+          <h2 class="h2 reveal" data-delay="1">Each map had to pass <em>the same exams.</em></h2>
+          <p class="lede reveal" data-delay="2">Five seeds × six models per seed. The table reads one cell at a time: does this method pass this test, and by how much.</p>
+        </div>
+        <div class="card verdict-card reveal">
+          <div class="vt-wrap"><table class="table vt" id="verdictTable"></table></div>
+          <p class="small vt-foot">Held = passed; Conditional = passes under some settings; Weak = mostly fails. Numbers from the ENG XAI run summaries (5 seeds × 6 models), default setting 20 mV, R1 fill, log-loss; maps and E3 on PVDF.</p>
+        </div>
+        <div class="tests-explained" id="testCards"></div>
+      </div>
+    </section>
+
+    <!-- ───────────── Where it looks ───────────── -->
+    <section class="section" id="looks">
+      <div class="container split looks">
+        <div class="stack">
+          <span class="eyebrow reveal">Where it looks</span>
+          <h2 class="h2 reveal" data-delay="1">The most reliable map, <em>for this exact model.</em></h2>
+          <p class="body-lg reveal" data-delay="2">Grouped PFI of the model running on this site (seed 0), from the XAI run. Pick a coating and an analyte; bars under the axis are the E3 peak windows.</p>
+          <div class="row reveal" data-delay="3"><div class="seg" id="lkPoly" role="radiogroup" aria-label="Coating"><button role="radio" data-v="PVDF" aria-checked="true">PVDF</button><button role="radio" data-v="P4VP" aria-checked="false">P4VP</button></div><div class="seg" id="lkFocus" role="radiogroup" aria-label="Analyte"></div></div>
+          <ul class="peak-list reveal" data-delay="4" id="lkList"></ul>
+        </div>
+        <figure class="figure card card-pad reveal" data-delay="1">
+          <div class="card-head"><span class="card-title" id="lkTitle">Permutation importance per window</span><div class="seg sm" id="lkWidth" role="radiogroup" aria-label="Window"><button role="radio" data-v="20mV" aria-checked="true">20 mV</button><button role="radio" data-v="40mV" aria-checked="false">40 mV</button></div></div>
+          <div class="legend" id="lkLegend"></div>
+          <svg class="viz" id="lkChart" role="img" aria-label="Permutation importance per window"></svg>
+          <figcaption id="lkCap"></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ───────────── Edges ───────────── -->
+    <section class="section" id="edges">
+      <div class="container split">
+        <div class="stack">
+          <span class="eyebrow reveal">The edges</span>
+          <h2 class="h2 reveal" data-delay="1">Why some maps <em>light up the ends.</em></h2>
+          <p class="body-lg reveal" data-delay="2">A six-level wavelet transform on 200 points reaches the ends of the scan. Some of its coefficients see almost nothing but the first or last ten points — and the model does use them. So part of the weight that maps put on the edges is real.</p>
+          <p class="body-lg reveal" data-delay="3">The other part comes from the fill. Bridging a masked window with a straight line (R3) is harmless in the middle of a peak but, at the edge, it has only one neighbour and flattens the start of the scan; in the tests that fill pushed the edge share to 35% and was flagged.</p>
+        </div>
+        <figure class="figure card card-pad reveal" data-delay="1">
+          <div class="card-head"><span class="card-title">Coefficients that only see the ends</span><span class="badge" id="edgeCount">—</span></div>
+          <svg class="viz" id="edgeMap" role="img" aria-label="Which of the 228 coefficients depend on the first or last ten points"></svg>
+          <div class="edge-bars" id="edgeBars"></div>
+          <figcaption>Computed in your browser from the wavelet filters and this model's split gain. A coefficient is edge-only when more than 90% of its weight comes from the first or last 10 points; grey cells sit exactly on 90%, so the count is a range — the XAI run's own computation counted 30.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ───────────── In the analyzer ───────────── -->
+    <section class="section" id="analyzer">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow reveal">In the analyzer</span>
+          <h2 class="h2 reveal" data-delay="1">What you see there, <em>and why.</em></h2>
+        </div>
+        <div class="choices" id="choices"></div>
+        <div class="row reveal" style="margin-top:32px"><a class="btn btn-primary" href="app.html#s=38">See it on a curve <svg class="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+      </div>
+    </section>
+  </main>
+
+  <pd-footer></pd-footer>
+</body>
+</html>

@@ -359,33 +359,3 @@ export function heatChart(svg, analytes, occ, E, selected, onSelect, scale = "lo
     if (hit) onSelect(+hit.dataset.row);
   };
 }
-
-/** Mean |Δp| per window across the library, one line per analyte, direct-labelled at the peak. */
-export function profileChart(svg, analytes, profile, centers, windows = []) {
-  const w = svg.clientWidth || 400;
-  const hasWin = windows.some(Boolean);
-  const h = hasWin ? 222 : 190;
-  const m = { l: 40, r: 10, t: 14, b: hasWin ? 56 : 24 };
-  const max = Math.max(1e-9, ...profile.flat());
-  const y = niceTicks(0, max, 4);
-  const sx = (v) => m.l + (v / 0.8) * (w - m.l - m.r);
-  const sy = (v) => h - m.b - (v / y.hi) * (h - m.t - m.b);
-  let out = "";
-  for (const t of y.ticks) out += `<line x1="${m.l}" x2="${w - m.r}" y1="${sy(t)}" y2="${sy(t)}" style="stroke:var(--grid)"/><text x="${m.l - 6}" y="${sy(t) + 3}" text-anchor="end">${+t.toFixed(3)}</text>`;
-  for (const v of [0, 0.2, 0.4, 0.6, 0.8]) out += `<text x="${sx(v)}" y="${h - m.b + 16}" text-anchor="middle">${v.toFixed(1)}</text>`;
-  windows.forEach((win, k) => {
-    if (!win) return;
-    const y = h - m.b + 24 + k * 7;
-    out += `<rect x="${sx(win.lo)}" y="${y}" width="${Math.max(2, sx(win.hi) - sx(win.lo))}" height="4" rx="2" style="fill:var(--a${k})" data-tip="<div class='tt-h'>${esc(analytes[k].name)} · E3 peak window</div><div class='tt-r'><span>${win.lo.toFixed(3)}–${win.hi.toFixed(3)} V</span><b>peak ${win.center.toFixed(3)} V</b></div>"/>`;
-    out += `<line x1="${sx(win.center)}" x2="${sx(win.center)}" y1="${y - 2}" y2="${y + 6}" style="stroke:var(--ink);stroke-width:1.5"/>`;
-  });
-  analytes.forEach((a, k) => {
-    const d = profile[k].map((v, j) => `${j ? "L" : "M"}${sx(centers[j]).toFixed(1)},${sy(v).toFixed(1)}`).join("");
-    out += `<path class="line" d="${d}" style="stroke:var(--a${k})"/>`;
-    const j = profile[k].indexOf(Math.max(...profile[k]));
-    out += `<circle cx="${sx(centers[j])}" cy="${sy(profile[k][j])}" r="4" style="fill:var(--a${k});stroke:var(--surface-1);stroke-width:2" data-tip="<div class='tt-h'>${esc(a.name)} · peak window</div><div class='tt-r'><span>${centers[j].toFixed(3)} V</span><b>${profile[k][j].toFixed(3)}</b></div>"/>`;
-  });
-  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-  svg.innerHTML = out;
-  wireTips(svg);
-}

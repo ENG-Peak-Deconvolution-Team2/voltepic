@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Analyzer — Peak Deconvolution</title>
+  <meta name="description" content="Load a square-wave voltammogram and read four biomarker decisions with a live report: measurement checks, preprocessing, detection and explanation.">
+  <meta name="theme-color" content="#f6f5f1">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/analyzer.css">
+  <link rel="modulepreload" href="assets/js/engine/model.js">
+  <script src="assets/js/shell.js"></script>
+  <script type="module" src="assets/js/app/main.js"></script>
+</head>
+<body class="page-app">
+  <a class="skip" href="#report">Skip to the report</a>
+  <pd-nav></pd-nav>
+
+  <main id="main">
+    <!-- ───────────── Toolbar ───────────── -->
+    <div class="app-bar">
+      <div class="container app-bar-inner">
+        <div class="sample-switch">
+          <button class="icon-btn ghost" id="prevBtn" aria-label="Previous held-out curve" title="Previous curve (←)"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+          <button class="sample-btn" id="sampleBtn" aria-haspopup="dialog" title="Browse the library (L)">
+            <span class="sb-dots" id="sbDots" aria-hidden="true"></span>
+            <span class="sb-text"><span class="sb-title" id="sbTitle">Loading…</span><span class="sb-sub mono" id="sbSub"></span></span>
+            <svg class="sb-caret" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg>
+          </button>
+          <button class="icon-btn ghost" id="nextBtn" aria-label="Next held-out curve" title="Next curve (→)"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+        </div>
+        <div class="run-trace" id="runTrace" aria-live="polite"></div>
+        <div class="app-actions">
+          <button class="btn btn-secondary btn-sm" id="uploadBtn" title="Upload a measurement (U)"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg><span>Upload</span></button>
+          <button class="btn btn-primary btn-sm" id="askBtn" aria-controls="assistant" aria-expanded="false" title="Ask the assistant (A)"><svg viewBox="0 0 24 24"><path d="M5 18.5V6.5A1.5 1.5 0 0 1 6.5 5h11A1.5 1.5 0 0 1 19 6.5v8a1.5 1.5 0 0 1-1.5 1.5H9z"/><path d="M9 9.5h6M9 12.5h4"/></svg><span>Ask</span></button>
+          <input type="file" id="fileInput" accept=".csv,.txt,.tsv,text/csv,text/plain" hidden>
+        </div>
+      </div>
+    </div>
+
+    <div class="container app-grid">
+      <!-- ───────────── Instrument (sticky) ───────────── -->
+      <section class="instrument" aria-label="Voltammogram">
+        <div class="card inst-card">
+          <header class="inst-head">
+            <div class="seg" id="viewSeg" role="tablist" aria-label="Chart view">
+              <button role="tab" data-view="signal" aria-selected="true">Signal</button>
+              <button role="tab" data-view="pre" aria-selected="false">Preprocess</button>
+              <button role="tab" data-view="explain" aria-selected="false">Explanation</button>
+            </div>
+            <div class="inst-tools">
+              <span class="inst-cap mono" id="instCap"></span>
+              <button class="icon-btn ghost" id="exportBtn" aria-label="Download the processed curve as CSV" title="Download CSV"><svg viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></svg></button>
+            </div>
+          </header>
+          <div class="chart-wrap" id="chartWrap">
+            <svg class="chart" id="chart" role="img" aria-label="Square-wave voltammogram"></svg>
+            <div class="chart-loading" id="chartLoading"><div class="spinner"></div><span>Loading the model…</span></div>
+          </div>
+          <footer class="inst-foot">
+            <div class="legend" id="chartLegend"></div>
+          </footer>
+        </div>
+        <div class="verdicts" id="verdicts" aria-label="Detection results"></div>
+      </section>
+
+      <!-- ───────────── Report ───────────── -->
+      <article class="report" id="report" aria-live="polite">
+        <header class="report-head">
+          <span class="eyebrow" id="repEyebrow">Analysis report</span>
+          <h1 class="h2" id="repTitle">Preparing…</h1>
+          <p class="body-lg" id="repSub"></p>
+          <nav class="rep-toc" id="repToc" aria-label="Report sections">
+            <a href="#sec-measure" data-sec="measure"><span class="mono">01</span>Measurement</a>
+            <a href="#sec-pre" data-sec="pre"><span class="mono">02</span>Preprocess</a>
+            <a href="#sec-detect" data-sec="detect"><span class="mono">03</span>Detect</a>
+            <a href="#sec-explain" data-sec="explain"><span class="mono">04</span>Explain</a>
+          </nav>
+        </header>
+        <section class="r-sec" id="sec-measure" data-sec="measure" data-view="signal"></section>
+        <section class="r-sec" id="sec-pre" data-sec="pre" data-view="pre"></section>
+        <section class="r-sec" id="sec-detect" data-sec="detect" data-view="signal"></section>
+        <section class="r-sec" id="sec-explain" data-sec="explain" data-view="explain"></section>
+        <footer class="rep-foot small">
+          Model, thresholds and validation: <a class="link" href="model.html">model card</a> · method: <a class="link" href="method.html">how it works</a> · explanations: <a class="link" href="explainability.html">how we tested them</a>.
+        </footer>
+      </article>
+    </div>
+  </main>
+
+  <!-- ───────────── Assistant drawer ───────────── -->
+  <aside class="assistant" id="assistant" aria-label="Analysis assistant" hidden>
+    <header class="as-head">
+      <div><span class="card-title">Assistant</span> <span class="badge" data-tone="warn" title="Answers are composed by rules from the current analysis; a language model will be connected later">Demo</span></div>
+      <button class="icon-btn ghost" id="askClose" aria-label="Close the assistant"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="as-log" id="chatLog"></div>
+    <div class="as-suggest" id="chatSuggest"></div>
+    <form class="as-input" id="chatForm" autocomplete="off">
+      <input id="chatText" type="text" placeholder="Ask about this analysis" aria-label="Ask the assistant">
+      <button class="btn btn-primary btn-sm" type="submit">Send</button>
+    </form>
+  </aside>
+
+  <!-- ───────────── Library sheet ───────────── -->
+  <dialog class="sheet" id="librarySheet" aria-labelledby="libTitle">
+    <header class="sheet-head">
+      <div>
+        <span class="eyebrow no-rule">Library</span>
+        <h2 class="h3" id="libTitle">125 held-out curves</h2>
+        <p class="small">The model never saw these curves in training (seed-0 outer test, 46 blocks).</p>
+      </div>
+      <button class="icon-btn ghost" id="libClose" aria-label="Close the library"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="sheet-tools">
+      <label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><input id="libSearch" type="search" placeholder="Search composition, chip, nM…" aria-label="Search the library"></label>
+      <div class="seg sm" id="libPoly" role="radiogroup" aria-label="Coating"><button role="radio" data-v="all" aria-checked="true">All</button><button role="radio" data-v="P4VP" aria-checked="false">P4VP</button><button role="radio" data-v="PVDF" aria-checked="false">PVDF</button></div>
+      <div class="seg sm" id="libMix" role="radiogroup" aria-label="Analytes present"><button role="radio" data-v="all" aria-checked="true">Any</button><button role="radio" data-v="1" aria-checked="false">1</button><button role="radio" data-v="2" aria-checked="false">2</button><button role="radio" data-v="3" aria-checked="false">3+</button></div>
+    </div>
+    <div class="lib-grid" id="libGrid" role="listbox" aria-label="Held-out curves"></div>
+    <footer class="sheet-foot small" id="libCount"></footer>
+  </dialog>
+
+  <div class="drop-overlay" id="dropOverlay" hidden><div><svg viewBox="0 0 48 48"><path d="M14 6h14l10 10v24a3 3 0 0 1-3 3H14a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3z"/><path d="M28 6v10h10"/><path d="M24 34V22M19 27l5-5 5 5"/></svg><b>Drop to analyze</b><span>CSV with potential and current, or a raw CHI760F .txt</span></div></div>
+
+  <pd-footer></pd-footer>
+</body>
+</html>
