@@ -47,7 +47,7 @@ observeReveal();
 
 /* ───────────── Command palette ───────────── */
 const PAGE_ITEMS = [
-  ["index.html", "Overview", "What this is, in one page"],
+  ["index.html", "Overview", "VoltEPIC in one page"],
   ["app.html", "Analyzer", "Load a curve and read the four decisions"],
   ["method.html", "Method", "From raw current to a decision, step by step"],
   ["explainability.html", "Explainability", "Where the model looks, and how we tested that"],

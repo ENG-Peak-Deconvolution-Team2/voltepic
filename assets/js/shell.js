@@ -18,12 +18,13 @@
     ["about.html", "About"],
   ];
   var here = location.pathname.split("/").pop() || "index.html";
-  var REPO = "https://github.com/ENG-Peak-Deconvolution-Team2/analysis-dashboard";
+  var REPO = "https://github.com/ENG-Peak-Deconvolution-Team2/voltepic";
   var TEAM = "https://eng-peak-deconvolution-team2.github.io/project-dashboard/";
 
   var LOGO = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="9" fill="currentColor" opacity=".07"/>'
     + '<path d="M5 22.5c3 0 3.6-12 6.6-12 2.8 0 2.8 8.5 5 8.5 2 0 2-5.6 4.4-5.6 2.5 0 3 9.1 6 9.1" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'
     + '<path d="M9.5 25.5h4M18 25.5h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="1.6 2.4" opacity=".55"/></svg>';
+  var WORDMARK = '<span class="wordmark">Volt<b>EPIC</b></span>';
   var ICON = {
     search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5" stroke-linecap="round"/></svg>',
     sun: '<svg class="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>',
@@ -37,7 +38,7 @@
       return '<a href="' + p[0] + '"' + (p[0] === here ? ' aria-current="page"' : "") + ">" + p[1] + "</a>";
     }).join("");
     return '<nav class="site-nav" aria-label="Main"><div class="container nav-inner">'
-      + '<a class="logo" href="index.html" aria-label="Peak Deconvolution, home">' + LOGO + "<span>Peak Deconvolution</span><small>TEAM 2</small></a>"
+      + '<a class="logo" href="index.html" aria-label="VoltEPIC, home">' + LOGO + WORDMARK + "<small>TEAM 2</small></a>"
       + '<div class="nav-links" id="navLinks">' + links + "</div>"
       + '<div class="nav-tools">'
       + '<button class="kbd-btn" data-palette aria-label="Search pages and samples">' + ICON.search + '<span class="kbd-label">Search</span><kbd>Ctrl K</kbd></button>'
@@ -56,8 +57,8 @@
     };
     return '<footer class="site-footer"><div class="container">'
       + '<div class="foot-grid">'
-      + '<div><a class="logo" href="index.html">' + LOGO + "<span>Peak Deconvolution</span></a>"
-      + '<p class="foot-blurb">Detection of four biomarkers from square-wave voltammograms, with explanations that were tested before they were trusted. ENG project, Team 2.</p></div>'
+      + '<div><a class="logo" href="index.html" aria-label="VoltEPIC, home">' + LOGO + WORDMARK + "</a>"
+      + '<p class="foot-blurb"><b>Explainable Prediction of Individual Concentrations.</b> An analysis site for square-wave voltammograms: four biomarkers, with explanations that were tested before they were trusted. ENG Peak Deconvolution, Team 2.</p></div>'
       + col("Product", [["app.html", "Analyzer"], ["method.html", "Method"], ["explainability.html", "Explainability"]])
       + col("Evidence", [["data.html", "Dataset"], ["model.html", "Model card"], ["model.html#parity", "Reference check"]])
       + col("Project", [["about.html", "About &amp; team"], [TEAM, "Team dashboard"], [REPO, "Source code"]])

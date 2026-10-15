@@ -1,12 +1,15 @@
-# Peak Deconvolution — biomarker detection you can check
+# VoltEPIC — Explainable Prediction of Individual Concentrations
 
-A small static site that reads a square-wave voltammogram and decides, for each of four biomarkers —
+An analysis site that reads a square-wave voltammogram and decides, for each of four biomarkers —
 ascorbic acid (AA), serotonin (5-HT), estradiol (2E) and melatonin (Mela) — whether it is present,
 and shows why. The detection model runs entirely in the browser; nothing is uploaded anywhere.
 
-**Live:** https://eng-peak-deconvolution-team2.github.io/analysis-dashboard/
+**Live:** https://eng-peak-deconvolution-team2.github.io/voltepic/
 
 ENG Peak Deconvolution project · Team 2 (machine learning) · work package 6, web interface.
+
+The model behind it today is a detector: it says whether each analyte is present, not how much.
+Concentration estimates are the part of the name a regression model will fill in.
 
 ## Pages
 
