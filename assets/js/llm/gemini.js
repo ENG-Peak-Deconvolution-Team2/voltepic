@@ -27,6 +27,7 @@ function explain(status, message = "") {
   if (status === 403) return "This key is not allowed to call the Gemini API (403).";
   if (status === 404) return "This model is not available for this key (404).";
   if (status === 429) return "Quota or rate limit reached (429). Free keys allow a few requests per minute; wait and retry.";
+  if (status === 503) return "This model is busy right now (503, high demand on Google's side). Retry in a minute, or pick another model in Gemini settings.";
   if (status >= 500) return `Gemini is unavailable right now (${status}). Retry in a minute.`;
   return `Gemini returned HTTP ${status}${message ? `: ${message}` : ""}.`;
 }
