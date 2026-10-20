@@ -2,7 +2,8 @@
 
 An analysis site that reads a square-wave voltammogram and decides, for each of four biomarkers —
 ascorbic acid (AA), serotonin (5-HT), estradiol (2E) and melatonin (Mela) — whether it is present,
-and shows why. The detection model runs entirely in the browser; nothing is uploaded anywhere.
+and shows why. The detection model runs entirely in the browser; nothing is uploaded anywhere, unless you ask the
+assistant for a Gemini report (below).
 
 **Live:** https://eng-peak-deconvolution-team2.github.io/voltepic/
 
@@ -26,8 +27,8 @@ Concentration estimates are the part of the name a regression model will fill in
 Everywhere: light and dark themes (follows the system, remembers a choice), a command palette
 (`Ctrl/⌘ K` or `/`) over pages, actions and all 125 curves, responsive down to 390 px.
 
-The **analysis assistant** is a placeholder: its answers are composed by rules from the current
-analysis. `assets/js/assistant.js` → `respond()` is where a language-model call will go.
+The **analysis assistant** answers quick questions by rules from the current analysis, and writes a **chemist report
+with Gemini** on request (next section).
 
 ## Explanations in the analyzer
 
@@ -40,6 +41,37 @@ Chosen from the ENG WP5 XAI run by what landed on the peaks in its tests:
   reference (R2) — across all fills, the local method that lands on the peak most often.
 - **This curve, uploads:** occlusion computed in the browser; default fill is the training mean (R1),
   the straight-line bridge (R3) is offered but was flagged for edge bias.
+
+## Chemist report (Gemini)
+
+The assistant's *Write a chemist report* turns the current result into a report in Turkish. The language model only
+rephrases; everything it may say is computed first, in the browser:
+
+1. **Packet** (`assets/js/llm/packet.js`) — numbered facts `F01 …`: acquisition, coating and domain, the four decisions
+   with threshold distance, the region pushing each decision most toward VAR and toward YOK with its peak-window and
+   curve-end flags, the peak centres, and the method's model-level test record. Library curves use KernelSHAP (blank
+   reference) from `xai.json`; uploads use the browser's occlusion, with an unknown coating and no peak windows.
+   The sample id and block are not sent: they come from the file name, which carries the true concentrations.
+2. **Prompt** — the system prompt and the knowledge cards of the tested prototype (`data/llm.json`, exported by
+   `tools/export_llm.py` from `literature/xai_llm_rag/prototip/`, prompt v0.2).
+3. **Gemini** (`assets/js/llm/gemini.js`) — REST `generateContent` from the browser with the visitor's own API key
+   (Google AI Studio). The key is stored in this browser's localStorage and sent only to Google. No key ships with the
+   site. On the free tier Google may use what is sent to improve its models and human reviewers may read it.
+4. **Check** (`assets/js/llm/verify.js`) — every sentence against the packet: a fact cited, numbers present in the cited
+   facts or cards, decisions not contradicted, curve-end regions not presented as peaks. Findings are listed under the
+   report; the facts sent are shown beside it.
+
+```
+node tools/llm_parity.mjs
+```
+
+compares the packet, the prompt and the check with the Python prototype. Its fixture
+(`tools/fixtures/llm_parity.json`, written by `export_llm.py --fixture` from the research workspace) is not part of this
+repository. Last run: 125/125 library packets (2,093 facts),
+5/5 prompts of the v0.2 run and 46/46 reports with identical findings (2026-10-20). Measured on the report task
+(5 curves): Gemini 3.8 Flash 0 decision errors and no findings of its own; Gemini 2.5 Flash 0 decision errors but
+once described the score as a presence probability, which the check does not catch
+(`literature/xai_llm_rag/prototip/kosu_2026-10-20_v02/`).
 
 ## Inputs
 
@@ -87,14 +119,18 @@ assets/js/chart.js         analyzer charts (voltammogram with crosshair, coeffic
 assets/js/app/             analyzer: main.js (state, run, instrument), report.js (four sections)
 assets/js/pages/           one module per page
 assets/js/io.js            CSV / CHI parsing and resampling
-assets/js/assistant.js     demo assistant
+assets/js/assistant.js     assistant: scripted answers + the Gemini report
+assets/js/llm/             report pipeline: packet, verify, gemini, render, report
 assets/js/engine/          wavelet transform, model, occlusion
 data/model.json            exported model
 data/library.json          held-out curves, metadata, mean blanks, Python reference scores
 data/xai.json              XAI run results for this model: per-curve SHAP (R2), PFI, E3 windows, test numbers
+data/llm.json              report writer's system prompt and knowledge cards (from the prototype)
 tools/export_model.py      regenerates model.json / library.json from the research workspace
 tools/export_xai.py        regenerates xai.json; checks that the run's rows and model are the site's
 tools/parity.mjs           JS ↔ Python parity test
+tools/export_llm.py        regenerates llm.json (+ --fixture: tools/fixtures/llm_parity.json)
+tools/llm_parity.mjs       report pipeline ↔ Python prototype parity test
 ```
 
 No build step: any static server works (`python -m http.server`), and GitHub Pages serves `main`.

@@ -29,6 +29,7 @@ const assistant = createAssistant({
   ctx: () => ({
     result: S.result, occ: S.occ, qc: S.qc, analytes: S.model?.analytes ?? [], thresholds: S.model?.thresholds ?? [],
     E, widthMv: S.x.width * 4, labels: S.sample?.labels ?? null, bench: S.bench, peakWindow,
+    sample: S.sample, xai: S.xai, grid: S.json?.grid, acquisition: S.acquisition, width: S.x.width, fill: S.x.fill,
   }),
   actions: { explain: async () => {} },
 });

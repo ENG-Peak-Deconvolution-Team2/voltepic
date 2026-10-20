@@ -1,9 +1,12 @@
-// Demo analysis assistant. Answers are composed by rules from the current analysis; the
-// `respond` function is the seam where an LLM call will replace the rules later.
+// Analysis assistant. Quick answers are composed by rules from the current analysis; the chemist report is written by
+// Gemini from a packet of numbered facts and checked against it (assets/js/llm/), with the visitor's own API key.
 
-import { esc, pct, conc, sleep, reducedMotion, fmtI } from "./ui.js";
+import { esc, pct, conc, sleep, reducedMotion, fmtI, download, toast } from "./ui.js";
+import { getKey, setKey, setModel, getModel as getGeminiModel } from "./llm/gemini.js";
+import { writeReport, reportHtml, reportMarkdown, keyFormHtml, label } from "./llm/report.js";
 
 const SUGGESTIONS = [
+  { id: "report", text: "Write a chemist report (Gemini)" },
   { id: "detected", text: "Which analytes were detected?" },
   { id: "regions", text: "Which regions influenced the prediction?" },
   { id: "why", text: "Why was this analyte detected?" },
@@ -12,6 +15,7 @@ const SUGGESTIONS = [
 ];
 
 const INTENTS = [
+  { id: "report", re: /report|rapor|gemini|chemist/ },
   { id: "regions", re: /region|where|window|potential|volt|influenc|shade|mask/ },
   { id: "why", re: /\bwhy\b|reason|explain|because/ },
   { id: "confidence", re: /confiden|sure|certain|probab|threshold|reliab|accura|trust/ },
@@ -54,6 +58,12 @@ export function createAssistant({ log, suggest, form, input, ctx, actions }) {
     if (busy || !question.trim()) return;
     busy = true;
     bubble("user", esc(question));
+    if ((intent || INTENTS.find((x) => x.re.test(question.toLowerCase()))?.id) === "report") {
+      await reportTurn();
+      busy = false;
+      renderSuggestions();
+      return;
+    }
     const el = bubble("bot", `<span class="typing"><i></i><i></i><i></i></span>`);
     await sleep(420 + Math.random() * 300);
     const html = await respond(question, intent);
@@ -72,7 +82,57 @@ export function createAssistant({ log, suggest, form, input, ctx, actions }) {
     if ((id === "regions" || id === "why") && !c.occ) await actions.explain();
     const fn = answers[id];
     if (fn) return fn(ctx(), question);
-    return `I am a scripted demo, so I only cover the current result: detections, confidence, influential regions, preprocessing and the measurement. A language model will take over this panel later. Try one of the suggestions below.`;
+    return `My quick answers are scripted, so they only cover the current result: detections, confidence, influential regions, preprocessing and the measurement. For a written explanation, ask for the <b>chemist report</b> (Gemini). Try one of the suggestions below.`;
+  }
+
+  /** Packet → Gemini → check, in one bot bubble; asks for a key first when none is saved. */
+  async function reportTurn() {
+    const c = ctx();
+    if (!c.result) { bubble("bot", `No analysis yet. Pick a sample from the library or upload a file, then ask for the report.`); return; }
+    if (!getKey()) { keyForm(); return; }
+    const model = getGeminiModel();
+    const el = bubble("bot msg-report", `<span class="typing"><i></i><i></i><i></i></span> <span class="llm-status">${esc(label(model))} is writing the report…</span>`);
+    const t0 = performance.now();
+    const tick = setInterval(() => { const s = el.querySelector(".llm-status"); if (s) s.textContent = `${label(model)} is writing the report… ${((performance.now() - t0) / 1000).toFixed(0)} s`; }, 1000);
+    try {
+      const out = await writeReport(c, { model });
+      el.innerHTML = reportHtml(out);
+      el.addEventListener("click", (ev) => {
+        const act = ev.target.closest("button[data-act]")?.dataset.act;
+        if (act === "copy") navigator.clipboard.writeText(out.res.text).then(() => toast("Report copied.", "info"), () => toast("Copy was blocked by the browser.", "error"));
+        if (act === "download") download(`voltepic_report_${c.sample.source === "library" ? `s${c.sample.index}` : "upload"}.md`, reportMarkdown(out, `VoltEPIC report — ${c.sample.title ?? c.sample.file ?? "curve"}`), "text/markdown");
+        if (act === "settings") keyForm();
+      });
+    } catch (err) {
+      el.innerHTML = `${esc(err.message)} <button type="button" class="btn btn-ghost btn-sm" data-act="settings">Gemini settings</button>`;
+      el.querySelector("[data-act=settings]").onclick = () => keyForm();
+    } finally {
+      clearInterval(tick);
+      log.scrollTop = log.scrollHeight;
+    }
+  }
+
+  function keyForm() {
+    const el = bubble("bot msg-report", keyFormHtml(!!getKey()));
+    const form = el.querySelector("form");
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      if (busy) return;
+      const k = form.key.value.trim();
+      if (k) setKey(k);
+      setModel(form.model.value);
+      if (!getKey()) { form.key.focus(); return; }
+      form.querySelectorAll("input, select, button").forEach((x) => { x.disabled = true; });
+      busy = true;
+      await reportTurn();
+      busy = false;
+      renderSuggestions();
+    });
+    form.querySelector("[data-act=forget]")?.addEventListener("click", () => {
+      setKey("");
+      form.querySelectorAll("input, select, button").forEach((x) => { x.disabled = true; });
+      bubble("bot", `The Gemini key was removed from this browser.`);
+    });
   }
 
   function renderSuggestions() {
@@ -99,7 +159,7 @@ export function createAssistant({ log, suggest, form, input, ctx, actions }) {
     renderSuggestions,
     reset() {
       log.replaceChildren();
-      bubble("bot", `Hi — I read the current analysis and answer from its numbers. <span class="mono">Demo:</span> replies are scripted; an LLM will be connected here later.`);
+      bubble("bot", `Hi — I read the current analysis and answer from its numbers. Quick answers are scripted. <b>Write a chemist report</b> asks Gemini, with your own API key, to write it from numbered facts; every sentence is then checked against those facts.`);
       renderSuggestions();
     },
     notify(html) { bubble("bot", html); },

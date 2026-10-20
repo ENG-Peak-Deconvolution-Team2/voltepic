@@ -211,6 +211,39 @@
 .as-input input:focus { border-color: var(--ink-2); }
 .as-input .btn { border-radius: 10px; height: 38px; }
 
+/* Chemist report (Gemini) inside the assistant */
+@media (min-width: 641px) { .assistant:has(.msg-report) { width: min(580px, calc(100vw - 24px)); } }
+.msg-report { max-width: 100%; align-self: stretch; display: flex; flex-direction: column; gap: 10px; }
+.llm-status { color: var(--muted); font-size: 12.5px; }
+.llm-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.llm-meta .mono { color: var(--muted); }
+.llm-body { color: var(--ink-2); }
+.llm-body h4, .llm-body h5, .llm-body h6 { margin: 12px 0 4px; color: var(--ink); font-weight: 600; line-height: 1.3; }
+.llm-body h4 { font-size: 15px; } .llm-body h5 { font-size: 14px; } .llm-body h6 { font-size: 13.5px; }
+.llm-body > :first-child { margin-top: 0; }
+.llm-body p { margin: 6px 0; }
+.llm-body ul, .llm-body ol { margin: 6px 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.llm-table { overflow-x: auto; margin: 6px 0; }
+.llm-table table { border-collapse: collapse; font-size: 12.5px; min-width: 100%; }
+.llm-table th, .llm-table td { border-bottom: 1px solid var(--line); padding: 5px 8px; text-align: left; vertical-align: top; }
+.llm-table th { color: var(--ink); font-weight: 600; }
+.fact-ref { display: inline-block; margin: 0 1px; padding: 0 5px; border-radius: 6px; font: 500 11px/18px var(--mono); color: var(--ink-2); background: var(--surface); border: 1px solid var(--line-strong); cursor: help; vertical-align: 1px; }
+.fact-ref[data-missing] { color: var(--critical); border-color: var(--critical); }
+.llm-check, .llm-facts { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--surface); font-size: 12.5px; }
+.llm-check summary, .llm-facts summary { cursor: pointer; color: var(--ink); font-weight: 500; }
+.llm-check { border-color: color-mix(in srgb, var(--warning) 35%, transparent); }
+.llm-check ul, .llm-facts ol { margin: 8px 0 4px; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.llm-check q { display: block; color: var(--muted); quotes: "«" "»"; }
+.llm-check p, .llm-ok, .llm-foot { margin: 0; color: var(--muted); font-size: 12px; }
+.llm-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.gem-form { display: flex; flex-direction: column; gap: 10px; }
+.gem-form p { margin: 0; }
+.gem-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink); font-weight: 500; }
+.gem-form input, .gem-form select { height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); font: 13px var(--mono); }
+.gem-form input:focus, .gem-form select:focus { border-color: var(--ink-2); outline: none; }
+.gem-small { color: var(--muted); font-size: 12px; }
+.gem-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
 /* ───────────── Library sheet ───────────── */
 .sheet { width: min(1100px, calc(100vw - 24px)); height: min(820px, calc(100vh - 48px)); padding: 0; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg); overflow: hidden; }
 .sheet[open] { display: flex; flex-direction: column; animation: pal-in .25s var(--ease-out); }
