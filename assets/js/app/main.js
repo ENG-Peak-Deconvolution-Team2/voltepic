@@ -26,6 +26,7 @@ export const S = {
 const chart = createSignalChart($("#chart"), $("#chartWrap"));
 const assistant = createAssistant({
   log: $("#chatLog"), suggest: $("#chatSuggest"), form: $("#chatForm"), input: $("#chatText"),
+  modeSeg: $("#asMode"), badge: $("#asBadge"),
   ctx: () => ({
     result: S.result, occ: S.occ, qc: S.qc, analytes: S.model?.analytes ?? [], thresholds: S.model?.thresholds ?? [],
     E, widthMv: S.x.width * 4, labels: S.sample?.labels ?? null, bench: S.bench, peakWindow,

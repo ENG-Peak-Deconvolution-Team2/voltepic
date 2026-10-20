@@ -1,0 +1,13 @@
+# VoltEPIC shared Gemini access (Cloudflare Worker). The key is a secret, never in this file:
+#   npx wrangler@4 secret put GEMINI_API_KEY      (from this folder, after `npx wrangler@4 login`)
+#   npx wrangler@4 deploy
+name = "voltepic-gemini"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+workers_dev = true
+
+# 4 reports per minute per IP address
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+simple = { limit = 4, period = 60 }

@@ -1,9 +1,12 @@
-// Gemini API from the browser (REST generateContent, CORS-enabled). The key is the visitor's own: it is kept in this
-// browser's localStorage and sent only to generativelanguage.googleapis.com. Nothing here ships a key.
+// Gemini API from the browser (REST generateContent, CORS-enabled). Two paths:
+//  · the visitor's own key, kept in this browser's localStorage and sent only to generativelanguage.googleapis.com;
+//  · without one, VoltEPIC's shared access: a Cloudflare Worker (worker/) that holds the project's key as a secret and
+//    accepts only the analyzer's fact packet. Nothing here ships a key.
 
 const API = "https://generativelanguage.googleapis.com/v1beta";
 const KEY = "voltepic.gemini.key";
 const MODEL = "voltepic.gemini.model";
+const SHARED = "";                                   // deployed Worker URL, e.g. https://voltepic-gemini.<account>.workers.dev
 
 /** Models offered. Measured on the v0.2 report task, 2026-10-20 (literature/xai_llm_rag/prototip/kosu_2026-10-20_v02). */
 export const MODELS = [
@@ -16,6 +19,9 @@ const store = {
   set: (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch { /* storage blocked: key lives for this page only */ } },
 };
 let memoryKey = "";
+
+/** The shared-access URL ("" = none); a local Worker can be tried with localStorage voltepic.gemini.shared. */
+export const shared = () => store.get("voltepic.gemini.shared") || SHARED;
 
 /** The key out of whatever was pasted: "AQ.… name", quotes, `GEMINI_API_KEY=…` — keys never contain spaces. */
 export function cleanKey(raw) {
@@ -41,19 +47,29 @@ function explain(status, message = "") {
   return `Gemini returned HTTP ${status}${message ? `: ${message}` : ""}.`;
 }
 
-/** One call: system instruction + one user message → { text, finishReason, modelVersion, usage, ms }. */
-export async function generate({ key, model, system, user, signal }) {
+/** One call with the visitor's key: system instruction + conversation → { text, finishReason, modelVersion, usage, ms }. */
+export function generate({ key, model, system, contents, signal }) {
+  return post(`${API}/models/${encodeURIComponent(model)}:generateContent`, { "x-goog-api-key": key },
+    { systemInstruction: { parts: [{ text: system }] }, contents }, model, signal, "the Gemini API");
+}
+
+/** One call through the shared access: the Worker builds the same conversation from the packet, the finished turns and
+ *  the new question (null = the report); sample id/block are not sent. */
+export function generateShared({ model, packet, turns, question, signal }) {
+  const sample = Object.fromEntries(Object.entries(packet.sample).filter(([k]) => k !== "id" && k !== "block"));
+  return post(`${shared()}/generate`, {},
+    { model, packet: { sample, facts: packet.facts, values: { detection: packet.values.detection }, retrieve: packet.retrieve }, turns, question },
+    model, signal, "VoltEPIC's shared access");
+}
+
+async function post(url, headers, payload, model, signal, where) {
   const t0 = performance.now();
   let res;
   try {
-    res = await fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
-      method: "POST", signal,
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text: user }] }] }),
-    });
+    res = await fetch(url, { method: "POST", signal, headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(payload) });
   } catch (err) {
     if (err.name === "AbortError") throw err;
-    throw new Error("Could not reach the Gemini API (network or browser blocked the request).");
+    throw new Error(`Could not reach ${where} (network or browser blocked the request).`);
   }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(explain(res.status, body.error?.message));

@@ -1,9 +1,10 @@
-// Analysis assistant. Quick answers are composed by rules from the current analysis; the chemist report is written by
-// Gemini from a packet of numbered facts and checked against it (assets/js/llm/), with the visitor's own API key.
+// Analysis assistant, two modes. Quick: answers composed by rules from the current analysis. Gemini: the chemist report
+// and follow-up questions, written by Gemini from a packet of numbered facts and checked against it (assets/js/llm/);
+// with the visitor's own API key or, when configured, VoltEPIC's shared access.
 
-import { esc, pct, conc, sleep, reducedMotion, fmtI, download, toast } from "./ui.js";
-import { getKey, setKey, setModel, getModel as getGeminiModel } from "./llm/gemini.js";
-import { writeReport, reportHtml, reportMarkdown, keyFormHtml, label } from "./llm/report.js";
+import { esc, pct, conc, sleep, reducedMotion, fmtI, download, toast, segmented } from "./ui.js";
+import { getKey, setKey, setModel, getModel as getGeminiModel, shared } from "./llm/gemini.js";
+import { conversationFor, converse, reportHtml, answerHtml, reportMarkdown, keyFormHtml, label } from "./llm/report.js";
 
 const SUGGESTIONS = [
   { id: "report", text: "Write a chemist report (Gemini)" },
@@ -15,7 +16,7 @@ const SUGGESTIONS = [
 ];
 
 const INTENTS = [
-  { id: "report", re: /report|rapor|gemini|chemist/ },
+  { id: "report", re: /report|rapor|gemini|chemist/ },
   { id: "regions", re: /region|where|window|potential|volt|influenc|shade|mask/ },
   { id: "why", re: /\bwhy\b|reason|explain|because/ },
   { id: "confidence", re: /confiden|sure|certain|probab|threshold|reliab|accura|trust/ },
@@ -26,9 +27,16 @@ const INTENTS = [
   { id: "hello", re: /^(hi|hello|hey|merhaba|selam)\b/ },
 ];
 
+const TR_NAME = { AA: "Askorbik asit", "5HT": "Serotonin", "2E": "Estradiol", Mela: "Melatonin" };
+const REPORT_ASK = /^\s*(kimyager\s+)?rapor(u)?\s+yaz|^\s*write\s+(a\s+)?(chemist\s+)?report/i;
+const MODE = "voltepic.assistant.mode";
+const remember = { get: () => { try { return localStorage.getItem(MODE); } catch { return null; } }, set: (v) => { try { localStorage.setItem(MODE, v); } catch { /* per page */ } } };
+
 /** Build the assistant. `ctx()` returns the live analysis; `actions.explain()` runs occlusion. */
-export function createAssistant({ log, suggest, form, input, ctx, actions }) {
+export function createAssistant({ log, suggest, form, input, ctx, actions, modeSeg, badge }) {
   let busy = false;
+  let mode = remember.get() === "gemini" ? "gemini" : "quick";
+  let conv = null;
 
   function bubble(role, html) {
     const el = document.createElement("div");
@@ -54,19 +62,35 @@ export function createAssistant({ log, suggest, form, input, ctx, actions }) {
     }
   }
 
+  function setMode(m, { announce = true } = {}) {
+    const changed = m !== mode;
+    mode = m;
+    remember.set(m);
+    modeSeg?.querySelectorAll("button[data-v]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.v === m)));
+    if (badge) { badge.textContent = m === "gemini" ? "Gemini" : "Scripted"; badge.dataset.tone = m === "gemini" ? "ok" : "warn"; }
+    input.placeholder = m === "gemini" ? "Gemini'ye sor — cevap Türkçe, olgulara dayalı" : "Ask about this analysis";
+    if (changed && announce) bubble("bot", m === "gemini" ? geminiIntro() : `Quick mode: scripted answers from the numbers of this analysis.`);
+    renderSuggestions();
+  }
+
+  const geminiIntro = () => `Gemini mode: ask for the <b>chemist report</b>, then ask follow-up questions. Answers are in Turkish, built only from `
+    + `the numbered facts of this analysis, and every sentence is checked against them.${getKey() || shared() ? "" : " A Gemini API key is needed."}`;
+
   async function ask(question, intent) {
     if (busy || !question.trim()) return;
+    const id = intent || (mode === "quick" ? INTENTS.find((x) => x.re.test(question.toLowerCase()))?.id : REPORT_ASK.test(question) ? "report" : "gemini");
     busy = true;
     bubble("user", esc(question));
-    if ((intent || INTENTS.find((x) => x.re.test(question.toLowerCase()))?.id) === "report") {
-      await reportTurn();
+    if (id === "report" || id === "gemini") {
+      if (mode !== "gemini") setMode("gemini", { announce: false });
+      await geminiTurn(id === "report" ? null : question.trim());
       busy = false;
       renderSuggestions();
       return;
     }
     const el = bubble("bot", `<span class="typing"><i></i><i></i><i></i></span>`);
     await sleep(420 + Math.random() * 300);
-    const html = await respond(question, intent);
+    const html = await respond(question, id);
     await stream(el, html);
     busy = false;
     renderSuggestions();
@@ -74,45 +98,50 @@ export function createAssistant({ log, suggest, form, input, ctx, actions }) {
 
   async function respond(question, intent) {
     const c = ctx();
-    const id = intent || INTENTS.find((x) => x.re.test(question.toLowerCase()))?.id;
     if (!c.result) {
-      if (id === "pipeline") return answers.pipeline(c);
+      if (intent === "pipeline") return answers.pipeline(c);
       return `No analysis yet. Pick a sample from the library or upload a file, then press <b>Analyze</b> — I answer from the numbers the model produces.`;
     }
-    if ((id === "regions" || id === "why") && !c.occ) await actions.explain();
-    const fn = answers[id];
+    if ((intent === "regions" || intent === "why") && !c.occ) await actions.explain();
+    const fn = answers[intent];
     if (fn) return fn(ctx(), question);
-    return `My quick answers are scripted, so they only cover the current result: detections, confidence, influential regions, preprocessing and the measurement. For a written explanation, ask for the <b>chemist report</b> (Gemini). Try one of the suggestions below.`;
+    return `My quick answers are scripted, so they only cover the current result: detections, confidence, influential regions, preprocessing and the measurement. For a written explanation or a free question, switch to <b>Gemini</b> above. Try one of the suggestions below.`;
   }
 
-  /** Packet → Gemini → check, in one bot bubble; asks for a key first when none is saved. */
-  async function reportTurn() {
+  /** One Gemini turn — the report (question null) or an answer — in one bot bubble; asks for a key first if there is no access. */
+  async function geminiTurn(question) {
     const c = ctx();
-    if (!c.result) { bubble("bot", `No analysis yet. Pick a sample from the library or upload a file, then ask for the report.`); return; }
-    if (!getKey()) { keyForm(); return; }
+    if (!c.result) { bubble("bot", `No analysis yet. Pick a sample from the library or upload a file first.`); return; }
+    if (!getKey() && !shared()) { keyForm(question); return; }
+    let next;
+    try { next = conversationFor(c, conv); } catch (err) { bubble("bot", esc(err.message)); return; }
+    if (conv && next !== conv && conv.turns.length) bubble("bot", `The analysis changed, so Gemini starts a new conversation from its facts.`);
+    conv = next;
     const model = getGeminiModel();
-    const el = bubble("bot msg-report", `<span class="typing"><i></i><i></i><i></i></span> <span class="llm-status">${esc(label(model))} is writing the report…</span>`);
+    const doing = question == null ? "is writing the report" : "is answering";
+    const el = bubble("bot msg-report", `<span class="typing"><i></i><i></i><i></i></span> <span class="llm-status">${esc(label(model))} ${doing}…</span>`);
     const t0 = performance.now();
-    const tick = setInterval(() => { const s = el.querySelector(".llm-status"); if (s) s.textContent = `${label(model)} is writing the report… ${((performance.now() - t0) / 1000).toFixed(0)} s`; }, 1000);
+    const tick = setInterval(() => { const s = el.querySelector(".llm-status"); if (s) s.textContent = `${label(model)} ${doing}… ${((performance.now() - t0) / 1000).toFixed(0)} s`; }, 1000);
     try {
-      const out = await writeReport(c, { model });
-      el.innerHTML = reportHtml(out);
+      const out = await converse(conv, question, { model });
+      el.innerHTML = question == null ? reportHtml(out) : answerHtml(out);
       el.addEventListener("click", (ev) => {
         const act = ev.target.closest("button[data-act]")?.dataset.act;
         if (act === "copy") navigator.clipboard.writeText(out.res.text).then(() => toast("Report copied.", "info"), () => toast("Copy was blocked by the browser.", "error"));
         if (act === "download") download(`voltepic_report_${c.sample.source === "library" ? `s${c.sample.index}` : "upload"}.md`, reportMarkdown(out, `VoltEPIC report — ${c.sample.title ?? c.sample.file ?? "curve"}`), "text/markdown");
-        if (act === "settings") keyForm();
+        if (act === "settings") keyForm(null);
       });
     } catch (err) {
       el.innerHTML = `${esc(err.message)} <button type="button" class="btn btn-ghost btn-sm" data-act="settings">Gemini settings</button>`;
-      el.querySelector("[data-act=settings]").onclick = () => keyForm();
+      el.querySelector("[data-act=settings]").onclick = () => keyForm(question);
     } finally {
       clearInterval(tick);
       log.scrollTop = log.scrollHeight;
     }
   }
 
-  function keyForm() {
+  /** Key and model form; on submit it runs the pending turn (`pending`: null = report, string = question). */
+  function keyForm(pending) {
     const el = bubble("bot msg-report", keyFormHtml(!!getKey()));
     const form = el.querySelector("form");
     form.addEventListener("submit", async (ev) => {
@@ -121,10 +150,10 @@ export function createAssistant({ log, suggest, form, input, ctx, actions }) {
       const k = form.key.value.trim();
       if (k) setKey(k);
       setModel(form.model.value);
-      if (!getKey()) { form.key.focus(); return; }
+      if (!getKey() && !shared()) { form.key.focus(); return; }
       form.querySelectorAll("input, select, button").forEach((x) => { x.disabled = true; });
       busy = true;
-      await reportTurn();
+      await geminiTurn(pending);
       busy = false;
       renderSuggestions();
     });
@@ -135,13 +164,29 @@ export function createAssistant({ log, suggest, form, input, ctx, actions }) {
     });
   }
 
+  /** Gemini-mode chips: the report first, then questions shaped by the current result (asked in Turkish). */
+  function geminiSuggestions(c) {
+    const out = [{ id: "report", text: conv?.turns.some((t) => t.q == null) ? "Raporu yeniden yaz" : "Kimyager raporu yaz" }];
+    if (!c.result) return out;
+    const top = topAnalyte(c);
+    const name = TR_NAME[c.analytes[top].id] ?? c.analytes[top].name;
+    out.push({ id: "gemini", text: `${name} ${c.result.detected[top] ? "VAR" : "YOK"} kararı neye dayanıyor?` });
+    const near = c.result.probs.findIndex((p, k) => Math.abs(p - c.thresholds[k]) <= 0.3);
+    if (near >= 0) out.push({ id: "gemini", text: `${TR_NAME[c.analytes[near].id]} kararı eşiğe yakın; nasıl okumalıyım?` });
+    out.push({ id: "gemini", text: "Eğrinin ucundaki katkılar ne anlama geliyor?" });
+    out.push({ id: "gemini", text: "Bu açıklamaya ne kadar güvenebilirim?" });
+    out.push({ id: "gemini", text: "Bu sonucu laboratuvarda nasıl doğrularım?" });
+    return out;
+  }
+
   function renderSuggestions() {
     const c = ctx();
     const top = c.result ? topAnalyte(c) : null;
-    suggest.replaceChildren(...SUGGESTIONS.map((s) => {
+    const list = mode === "gemini" ? geminiSuggestions(c) : SUGGESTIONS;
+    suggest.replaceChildren(...list.map((s) => {
       const b = document.createElement("button");
       b.type = "button";
-      b.textContent = s.id === "why" && top != null ? `Why was ${c.analytes[top].name.toLowerCase()} ${c.result.detected[top] ? "detected" : "not detected"}?` : s.text;
+      b.textContent = mode === "quick" && s.id === "why" && top != null ? `Why was ${c.analytes[top].name.toLowerCase()} ${c.result.detected[top] ? "detected" : "not detected"}?` : s.text;
       b.onclick = () => ask(b.textContent, s.id);
       return b;
     }));
@@ -153,14 +198,17 @@ export function createAssistant({ log, suggest, form, input, ctx, actions }) {
     input.value = "";
     ask(q);
   });
+  if (modeSeg) segmented(modeSeg, (v) => setMode(v));
 
   return {
     ask,
     renderSuggestions,
     reset() {
       log.replaceChildren();
-      bubble("bot", `Hi — I read the current analysis and answer from its numbers. Quick answers are scripted. <b>Write a chemist report</b> asks Gemini, with your own API key, to write it from numbered facts; every sentence is then checked against those facts.`);
-      renderSuggestions();
+      conv = null;
+      bubble("bot", mode === "gemini" ? geminiIntro()
+        : `Hi — I read the current analysis and answer from its numbers. These quick answers are scripted; switch to <b>Gemini</b> above for the chemist report and free questions.`);
+      setMode(mode, { announce: false });
     },
     notify(html) { bubble("bot", html); },
   };

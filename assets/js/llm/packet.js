@@ -151,10 +151,32 @@ export function buildPacket({ sample, probs, analytes, thresholds, grid, acquisi
   };
 }
 
+const REPORT = "Bu ölçüm için kimyagere yönelik raporu yaz.";
+const ANSWER = "Bu soruyu kural 1–6 ve 8'e uyarak, Türkçe ve 2–6 cümleyle cevapla; kural 7'deki rapor yapısı gerekmez. "
+  + "Her cümlenin sonunda dayandığı olgu kimliği olsun. Paket bunu söylemiyorsa \"pakette bu bilgi yok\" de.";
+
 /** Packet + cards → the user message (assemble_prompt.py; sample.id/block are not sent). */
-export function assemblePrompt(packet, cards) {
+export function assemblePrompt(packet, cards, instruction = REPORT) {
   const sample = Object.fromEntries(Object.entries(packet.sample).filter(([k]) => !DROP.includes(k)));
   const sent = { sample, facts: packet.facts, detection: packet.values.detection };
   const blocks = packet.retrieve.filter((k) => cards[k]).map((k) => `<kart anahtar="${k}">\n${cards[k]}\n</kart>`);
-  return `<paket>\n${JSON.stringify(sent, null, 1)}\n</paket>\n<bilgi>\n${blocks.join("\n")}\n</bilgi>\nBu ölçüm için kimyagere yönelik raporu yaz.`;
+  return `<paket>\n${JSON.stringify(sent, null, 1)}\n</paket>\n<bilgi>\n${blocks.join("\n")}\n</bilgi>\n${instruction}`;
+}
+
+/** What one turn asks for: the report (question null) or an answer to the question. */
+const ask = (question) => (question == null ? REPORT : `Soru: ${question}\n${ANSWER}`);
+
+/**
+ * The conversation sent to Gemini: the packet and cards go once, in the first user turn; `turns` are the finished
+ * exchanges [{ q: null | string, a: string }] (q null = the report), `question` the new one (null = write the report).
+ * With no earlier turns and no question this is exactly the tested single-turn report prompt.
+ */
+export function buildContents(packet, cards, turns, question) {
+  const contents = [];
+  turns.forEach((t, i) => {
+    contents.push({ role: "user", parts: [{ text: i === 0 ? assemblePrompt(packet, cards, ask(t.q)) : ask(t.q) }] });
+    contents.push({ role: "model", parts: [{ text: t.a }] });
+  });
+  contents.push({ role: "user", parts: [{ text: turns.length ? ask(question) : assemblePrompt(packet, cards, ask(question)) }] });
+  return contents;
 }

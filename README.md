@@ -44,7 +44,9 @@ Chosen from the ENG WP5 XAI run by what landed on the peaks in its tests:
 
 ## Chemist report (Gemini)
 
-The assistant's *Write a chemist report* turns the current result into a report in Turkish. The language model only
+The assistant has two modes, switched in its header: **Quick** (answers composed by rules) and **Gemini**. In Gemini mode
+*Kimyager raporu yaz* turns the current result into a report in Turkish, and follow-up questions are answered from the same
+packet, with the report and earlier answers as context; every answer is checked like the report. The language model only
 rephrases; everything it may say is computed first, in the browser:
 
 1. **Packet** (`assets/js/llm/packet.js`) — numbered facts `F01 …`: acquisition, coating and domain, the four decisions
@@ -54,9 +56,11 @@ rephrases; everything it may say is computed first, in the browser:
    The sample id and block are not sent: they come from the file name, which carries the true concentrations.
 2. **Prompt** — the system prompt and the knowledge cards of the tested prototype (`data/llm.json`, exported by
    `tools/export_llm.py` from `literature/xai_llm_rag/prototip/`, prompt v0.2).
-3. **Gemini** (`assets/js/llm/gemini.js`) — REST `generateContent` from the browser with the visitor's own API key
-   (Google AI Studio). The key is stored in this browser's localStorage and sent only to Google. No key ships with the
-   site. On the free tier Google may use what is sent to improve its models and human reviewers may read it.
+3. **Gemini** (`assets/js/llm/gemini.js`) — REST `generateContent`, either from the browser with the visitor's own API
+   key (Google AI Studio; stored in this browser's localStorage and sent only to Google) or, without one, through the
+   project's shared access: a Cloudflare Worker that holds the project key as a secret and accepts only this packet
+   (`worker/`, see its README). No key ships with the site. On the free tier Google may use what is sent to improve its
+   models and human reviewers may read it.
 4. **Check** (`assets/js/llm/verify.js`) — every sentence against the packet: a fact cited, numbers present in the cited
    facts or cards, decisions not contradicted, curve-end regions not presented as peaks. Findings are listed under the
    report; the facts sent are shown beside it.
@@ -121,6 +125,7 @@ assets/js/pages/           one module per page
 assets/js/io.js            CSV / CHI parsing and resampling
 assets/js/assistant.js     assistant: scripted answers + the Gemini report
 assets/js/llm/             report pipeline: packet, verify, gemini, render, report
+worker/                    Cloudflare Worker: shared Gemini access with the project key (secret)
 assets/js/engine/          wavelet transform, model, occlusion
 data/model.json            exported model
 data/library.json          held-out curves, metadata, mean blanks, Python reference scores

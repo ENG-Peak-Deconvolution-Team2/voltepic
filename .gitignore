@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 # report-pipeline parity fixture: holds unpublished LLM evaluation reports, kept local
 tools/fixtures/llm_parity.json
+worker/.wrangler/
+worker/.dev.vars
+worker/node_modules/
