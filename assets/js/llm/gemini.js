@@ -17,13 +17,22 @@ const store = {
 };
 let memoryKey = "";
 
-export const getKey = () => store.get(KEY) || memoryKey;
-export function setKey(k) { memoryKey = k.trim(); store.set(KEY, memoryKey); }
+/** The key out of whatever was pasted: "AQ.… name", quotes, `GEMINI_API_KEY=…` — keys never contain spaces. */
+export function cleanKey(raw) {
+  const s = String(raw ?? "").trim();
+  const m = s.match(/(?:AIza[\w-]{30,}|AQ\.[\w.-]{20,})/);
+  if (m) return m[0];
+  return (s.split(/\s+/)[0] ?? "").replace(/^[A-Z_]+=/, "").replace(/^["'`]+|["'`]+$/g, "");
+}
+
+export const getKey = () => cleanKey(store.get(KEY)) || memoryKey;
+export function setKey(k) { memoryKey = cleanKey(k); store.set(KEY, memoryKey); }
 export const getModel = () => store.get(MODEL) || MODELS[0].id;
 export const setModel = (m) => store.set(MODEL, m);
 
 function explain(status, message = "") {
-  if (status === 400 && /api key/i.test(message)) return "The API key was rejected. Check it in Google AI Studio.";
+  if ((status === 400 || status === 401) && /api key/i.test(message))
+    return `Google rejected the API key (${status}: ${message}) Paste only the key itself — it starts with AIza… or AQ.… — not its name; replace it in Gemini settings.`;
   if (status === 403) return "This key is not allowed to call the Gemini API (403).";
   if (status === 404) return "This model is not available for this key (404).";
   if (status === 429) return "Quota or rate limit reached (429). Free keys allow a few requests per minute; wait and retry.";
