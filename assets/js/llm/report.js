@@ -4,6 +4,9 @@
 import { buildPacket, assemblePrompt } from "./packet.js";
 import { verify } from "./verify.js";
 import { generate, getKey, getModel, MODELS } from "./gemini.js";
+
+/** "AQ.A…Xslg · 53 characters": enough to compare with AI Studio, not enough to use. */
+const masked = (k) => `${k.slice(0, 4)}…${k.slice(-4)} · ${k.length} characters`;
 import { renderReport } from "./render.js";
 import { loadJson } from "../data.js";
 import { esc } from "../ui.js";
@@ -77,6 +80,7 @@ export function keyFormHtml(hasKey) {
       the most influential regions, peak windows and the method's test record — and Gemini turns them into a report in Turkish,
       citing a fact for every sentence. Each sentence is then checked against the facts in your browser.</p>
     <label>Gemini API key<input name="key" type="password" spellcheck="false" placeholder="${hasKey ? "saved — paste a new one to replace it" : "paste your key"}"${hasKey ? "" : " required"}></label>
+    ${hasKey ? `<p class="gem-small">Saved in this browser: <span class="mono">${esc(masked(getKey()))}</span>. In AI Studio a key starts with AIza or AQ. and has about 39 or 53 characters.</p>` : ""}
     <label>Model<select name="model">${opts}</select></label>
     <p class="gem-small">Get a key at <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.
       The key stays in this browser and is sent only to Google's Gemini API, together with the facts (for library curves also chip,
