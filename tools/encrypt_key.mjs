@@ -1,5 +1,5 @@
 // Writes data/gemini_key.json: the site's Gemini key, encrypted with the site password (PBKDF2-SHA256 → AES-GCM).
-// The browser opens it in assets/js/llm/gemini.js (unlockSiteKey). Neither the key nor the password is printed or stored.
+// The browser opens it in assets/js/llm/gemini.js with SITE_PASS, which must be the same password. The key is not printed.
 //   GEMINI_API_KEY=… SITE_PASSWORD=… node tools/encrypt_key.mjs
 import { webcrypto as crypto } from "node:crypto";
 import { writeFileSync } from "node:fs";

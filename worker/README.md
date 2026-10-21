@@ -15,7 +15,7 @@ It is deliberately narrow:
   text, so the shared access can be asked off-topic things inside the prompt's rules; the rate limit and the question
   length bound what that costs.
 - **Status (2026-10-21)**: changed to the evidence-file protocol, not deployed; `SHARED` in `gemini.js` is empty. The
-  site instead carries its key encrypted (`data/gemini_key.json`, opened with the site password) or uses a visitor's own.
+  site instead carries its key encrypted (`data/gemini_key.json`, opened by the browser itself) or uses a visitor's own.
 - **Models**: `gemini-3.8-flash`, `gemini-2.5-flash`.
 - **Rate**: 4 reports per minute per IP (Workers rate-limiting binding).
 

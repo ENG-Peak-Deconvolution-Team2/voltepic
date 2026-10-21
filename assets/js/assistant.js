@@ -1,9 +1,9 @@
 // Analysis assistant, two modes. Quick: answers composed by rules from the current analysis. Gemini: the chemist report
 // and follow-up questions, written by Gemini from the evidence file of this analysis and checked by code (assets/js/llm/);
-// with the visitor's own API key or, when configured, VoltEPIC's shared access.
+// with the site's key, the visitor's own API key or, when configured, VoltEPIC's shared access.
 
 import { esc, pct, conc, sleep, reducedMotion, fmtI, download, toast, segmented } from "./ui.js";
-import { getKey, ownKey, setKey, setModel, getModel as getGeminiModel, shared, looksLikeKey, unlockSiteKey, restoreSiteKey, forgetSiteKey } from "./llm/gemini.js";
+import { getKey, ownKey, setKey, setModel, getModel as getGeminiModel, shared, looksLikeKey, restoreSiteKey } from "./llm/gemini.js";
 import { conversationFor, converse, reportHtml, answerHtml, reportMarkdown, keyFormHtml, label } from "./llm/report.js";
 
 const SUGGESTIONS = [
@@ -74,7 +74,7 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
   }
 
   const geminiIntro = () => `Gemini mode: ask for the <b>chemist report</b>, then ask follow-up questions. Answers are in Turkish, built only from `
-    + `this analysis's evidence file (decisions, basis labels, regions against the blank, peak windows), and code checks every text.${getKey() || shared() ? "" : " The first time, enter the site password."}`;
+    + `this analysis's evidence file (decisions, basis labels, regions against the blank, peak windows), and code checks every text.`;
 
   async function ask(question, intent) {
     if (busy || !question.trim()) return;
@@ -150,10 +150,8 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
       if (busy) return;
       const k = form.key.value.trim();
       const err = form.querySelector(".gem-error");
-      if (k && looksLikeKey(k)) setKey(k);
-      else if (k) {
-        try { await unlockSiteKey(k); } catch (e) { err.textContent = e.message; err.hidden = false; form.key.select(); return; }
-      }
+      if (k && !looksLikeKey(k)) { err.textContent = "That is not a Gemini API key (it starts with AIza… or AQ.…)."; err.hidden = false; form.key.select(); return; }
+      if (k) setKey(k);
       err.hidden = true;
       setModel(form.model.value);
       if (!getKey() && !shared()) { form.key.focus(); return; }
@@ -164,10 +162,9 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
       renderSuggestions();
     });
     form.querySelector("[data-act=forget]")?.addEventListener("click", () => {
-      const own = !!ownKey();
-      if (own) setKey(""); else forgetSiteKey();
+      setKey("");
       form.querySelectorAll("input, select, button").forEach((x) => { x.disabled = true; });
-      bubble("bot", own ? `The Gemini key was removed from this browser.` : `The site password was removed from this browser.`);
+      bubble("bot", `The Gemini key was removed from this browser.`);
     });
   }
 

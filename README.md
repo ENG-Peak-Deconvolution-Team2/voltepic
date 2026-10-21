@@ -67,11 +67,10 @@ may say is computed first:
 3. **Gemini** (`assets/js/llm/gemini.js`) — REST `generateContent` with the system prompt of `data/kimyager_istem.json`,
    called from the browser with the site's key or a visitor's own. The site's key ships only encrypted
    (`data/gemini_key.json`: PBKDF2-SHA256, 600,000 iterations → AES-256-GCM, written by `tools/encrypt_key.mjs`); the
-   site password, asked once and remembered in this browser, opens it. It keeps the key out of plain text in the public
-   repository; it is not access control: the password is short, so anyone with the file can find it by trying. All users
-   share that key's quota (free tier: about 20 requests per model per day; a report takes 1–2). A visitor can paste an
-   own key (Google AI Studio) in the same box instead; it stays in this browser's localStorage and is sent only to
-   Google. The Cloudflare Worker in `worker/` (the key as a server-side secret) is an alternative, not deployed. On the
+   browser opens it by itself with `SITE_PASS` in `gemini.js`, so visitors enter nothing. It keeps the key out of plain
+   text in the public repository; it is not access control: anyone reading the code can open it. All users share that
+   key's quota (free tier: about 20 requests per model per day; a report takes 1–2). A visitor can paste an own key
+   (Google AI Studio) in Gemini settings instead; it stays in this browser's localStorage and is sent only to Google. The Cloudflare Worker in `worker/` (the key as a server-side secret) is an alternative, not deployed. On the
    free tier Google may use what is sent to improve its models and human reviewers may read it.
 4. **Check** (`assets/js/llm/denetim.js`) — 8 rules on every text: sentence count and length, technical terms, record
    IDs, numbers not in the evidence file, "peak is here" claims, contradicted decisions, scan-edge regions, first person.
