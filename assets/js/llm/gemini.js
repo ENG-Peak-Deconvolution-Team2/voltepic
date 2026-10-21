@@ -1,17 +1,18 @@
 // Gemini API from the browser (REST generateContent, CORS-enabled). Two paths:
 //  · the visitor's own key, kept in this browser's localStorage and sent only to generativelanguage.googleapis.com;
 //  · without one, VoltEPIC's shared access: a Cloudflare Worker (worker/) that holds the project's key as a secret and
-//    accepts only the analyzer's fact packet. Nothing here ships a key.
+//    accepts only the analyzer's evidence file. Nothing here ships a key.
 
 const API = "https://generativelanguage.googleapis.com/v1beta";
 const KEY = "voltepic.gemini.key";
 const MODEL = "voltepic.gemini.model";
 const SHARED = "";                                   // deployed Worker URL, e.g. https://voltepic-gemini.<account>.workers.dev
 
-/** Models offered. Measured on the v0.2 report task, 2026-10-20 (literature/xai_llm_rag/prototip/kosu_2026-10-20_v02). */
+/** Models offered. Gemini 3.8 Flash measured on the evidence-file report, 2026-10-21 (literature/xai_llm_rag/kimyager_raporu/
+ *  kosu_gemini_2026-10-21): 7/7 texts passed the code check, 0 wrong claims read by hand. 2.5 Flash: not measured on it. */
 export const MODELS = [
-  { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", note: "0 decision errors, 0 verifier findings of its own on 5 curves" },
-  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", note: "0 decision errors; once described the score as a presence probability" },
+  { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", note: "7/7 texts passed the check, 0 wrong claims on 5 curves" },
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", note: "not measured on the evidence-file report" },
 ];
 
 const store = {
@@ -53,13 +54,10 @@ export function generate({ key, model, system, contents, signal }) {
     { systemInstruction: { parts: [{ text: system }] }, contents }, model, signal, "the Gemini API");
 }
 
-/** One call through the shared access: the Worker builds the same conversation from the packet, the finished turns and
- *  the new question (null = the report); sample id/block are not sent. */
-export function generateShared({ model, packet, turns, question, signal }) {
-  const sample = Object.fromEntries(Object.entries(packet.sample).filter(([k]) => k !== "id" && k !== "block"));
-  return post(`${shared()}/generate`, {},
-    { model, packet: { sample, facts: packet.facts, values: { detection: packet.values.detection }, retrieve: packet.retrieve }, turns, question },
-    model, signal, "VoltEPIC's shared access");
+/** One call through the shared access: the Worker builds the same message from the evidence file ("rapor" or "soru"), the
+ *  report given, the question and the earlier attempts' check findings. */
+export function generateShared({ model, kind, kanit, rapor, soru, onceki, signal }) {
+  return post(`${shared()}/generate`, {}, { model, kind, kanit, rapor, soru, onceki }, model, signal, "VoltEPIC's shared access");
 }
 
 async function post(url, headers, payload, model, signal, where) {

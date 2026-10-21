@@ -1,5 +1,5 @@
 // Analysis assistant, two modes. Quick: answers composed by rules from the current analysis. Gemini: the chemist report
-// and follow-up questions, written by Gemini from a packet of numbered facts and checked against it (assets/js/llm/);
+// and follow-up questions, written by Gemini from the evidence file of this analysis and checked by code (assets/js/llm/);
 // with the visitor's own API key or, when configured, VoltEPIC's shared access.
 
 import { esc, pct, conc, sleep, reducedMotion, fmtI, download, toast, segmented } from "./ui.js";
@@ -68,13 +68,13 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
     remember.set(m);
     modeSeg?.querySelectorAll("button[data-v]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.v === m)));
     if (badge) { badge.textContent = m === "gemini" ? "Gemini" : "Scripted"; badge.dataset.tone = m === "gemini" ? "ok" : "warn"; }
-    input.placeholder = m === "gemini" ? "Gemini'ye sor — cevap Türkçe, olgulara dayalı" : "Ask about this analysis";
+    input.placeholder = m === "gemini" ? "Gemini'ye sor — cevap Türkçe, kanıt dosyasından" : "Ask about this analysis";
     if (changed && announce) bubble("bot", m === "gemini" ? geminiIntro() : `Quick mode: scripted answers from the numbers of this analysis.`);
     renderSuggestions();
   }
 
   const geminiIntro = () => `Gemini mode: ask for the <b>chemist report</b>, then ask follow-up questions. Answers are in Turkish, built only from `
-    + `the numbered facts of this analysis, and every sentence is checked against them.${getKey() || shared() ? "" : " A Gemini API key is needed."}`;
+    + `this analysis's evidence file (decisions, basis labels, regions against the blank, peak windows), and code checks every text.${getKey() || shared() ? "" : " A Gemini API key is needed."}`;
 
   async function ask(question, intent) {
     if (busy || !question.trim()) return;
@@ -114,8 +114,8 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
     if (!c.result) { bubble("bot", `No analysis yet. Pick a sample from the library or upload a file first.`); return; }
     if (!getKey() && !shared()) { keyForm(question); return; }
     let next;
-    try { next = conversationFor(c, conv); } catch (err) { bubble("bot", esc(err.message)); return; }
-    if (conv && next !== conv && conv.turns.length) bubble("bot", `The analysis changed, so Gemini starts a new conversation from its facts.`);
+    try { next = await conversationFor(c, conv); } catch (err) { bubble("bot", esc(err.message)); return; }
+    if (conv && next !== conv && conv.turns.length) bubble("bot", `The analysis changed, so Gemini starts a new conversation from its evidence file.`);
     conv = next;
     const model = getGeminiModel();
     const doing = question == null ? "is writing the report" : "is answering";

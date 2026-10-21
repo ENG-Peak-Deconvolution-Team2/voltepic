@@ -4,7 +4,7 @@ import { $, $$, esc, conc, pct, amp, fmtI, countUp, segmented } from "../ui.js";
 import { ANALYTES, CODES, GRID_E as E } from "../data.js";
 import { coefChart, residualChart, stripChart, heatChart } from "../chart.js";
 import { profileChart } from "../viz.js";
-import { pickAnalyte, reExplain, setView, useChannel, peakWindow, unitKey, shapAvailable, drawChart } from "./main.js";
+import { pickAnalyte, reExplain, setView, useChannel, peakWindow, unitKey, shapAvailable, drawChart, addBlank, setCoating, blankRef } from "./main.js";
 
 const pct0 = (v) => `${Math.round(v * 100)}%`;
 const listNames = (ks) => {
@@ -76,7 +76,8 @@ function renderMeasure(S) {
     ["Recorded", `${s.date.slice(0, 4)}-${s.date.slice(4, 6)}-${s.date.slice(6, 8)}`],
     ["Replicate", s.rep ?? "—"], ["Blank traces", `${s.blankCount}`],
   ] : [
-    ["File", esc(s.file)], ["Electrode column", esc(s.channelName)], ["Coating", "unknown"],
+    ["File", esc(s.file)], ["Electrode column", esc(s.channelName)], ["Coating", esc(s.polymer ?? "unknown")],
+    ["Blank", s.blankFiles ? `${s.blankFiles.length} file${s.blankFiles.length > 1 ? "s" : ""} (mean)` : "none"],
     ["Resampled", s.resampled ? "yes, linear" : "no, on grid"],
     ...(s.params?.acquired ? [["Recorded", esc(s.params.acquired)]] : []),
   ];
@@ -94,10 +95,24 @@ function renderMeasure(S) {
     <p class="rs-label">${s.labels ? "Prepared composition (label)" : "Composition"}</p>
     ${s.labels ? `<div class="comp">${ANALYTES.map((a, k) => `<span class="chip" style="--c:var(${a.color})" ${s.labels[k] > 0 ? "" : "data-off"}><i></i>${a.name} <b class="mono">${conc(s.labels[k])}</b></span>`).join("")}</div>`
       : `<p class="small">Unknown: uploaded curves carry no label. The model has only seen ACS-ML-Biomarker chips (P4VP or PVDF, CHI760F, SWV 25 mV · 5 Hz); for other curves its probabilities are not calibrated.</p>`}
-    ${s.warnings?.length ? `<p class="warn-line">${s.warnings.map(esc).join("<br>")}</p>` : ""}`;
+    ${s.warnings?.length ? `<p class="warn-line">${s.warnings.map(esc).join("<br>")}</p>` : ""}
+    ${s.source === "upload" ? `<p class="rs-label">Blank and coating · for the chemist report</p>
+      <div class="blank-row"><button type="button" class="btn btn-secondary btn-sm" id="blankBtn"${s.kimBusy ? " disabled" : ""}>${s.blankFiles ? "Replace blank…" : "Add blank…"}</button>
+        <input type="file" id="blankInput" accept=".csv,.txt,.tsv,text/csv,text/plain" multiple hidden>
+        <span class="small" id="blankStatus">${s.kimBusy ? "Explaining against the blank…" : s.blankFiles ? `Blank: ${s.blankFiles.map(esc).join(", ")}${s.blankFiles.length > 1 ? " (mean)" : ""}. Both explanations compare the curve with it.`
+          : "The blank of the same electrode, one or more files (their mean is used). The chemist report needs it."}</span></div>
+      <div class="seg sm" id="coatSeg" role="radiogroup" aria-label="Coating">${["PVDF", "P4VP"].map((p) => `<button role="radio" data-v="${p}" aria-checked="${p === s.polymer}">${p}</button>`).join("")}</div>
+      <p class="small">${s.polymer ? `Coating ${esc(s.polymer)}${chipNote(s, S)}.` : "Choose the coating: the peak windows the report compares with depend on it."}</p>` : ""}`;
   const seg = $("#chanSeg", el);
   if (seg) segmented(seg, (v) => useChannel(+v));
+  if ($("#blankBtn", el)) {
+    $("#blankBtn", el).addEventListener("click", () => $("#blankInput", el).click());
+    $("#blankInput", el).addEventListener("change", (e) => { addBlank(e.target.files); e.target.value = ""; });
+    segmented($("#coatSeg", el), (v) => setCoating(v));
+  }
 }
+
+const chipNote = (s, S) => { const c = s.file?.match(/MC\d+/)?.[0]; return c && S.kimLib?.chip_polymer[c] === s.polymer ? `, from chip ${esc(c)} in the file name` : ""; };
 
 /* ───────────── 02 · Preprocess ───────────── */
 function renderPre(S) {
@@ -185,14 +200,14 @@ export function renderExplain(S) {
     <div class="xai-controls">
       ${seg("xAnalyte", "Analyte", ANALYTES.map((x, i) => [i, x.code]), k)}
       ${S.xai ? seg("xShade", "Graph", [["pfi", "Model-wide", false, "Where the model looks across all held-out curves (PFI)"], ["local", "This curve", false, "This curve's own explanation"]], S.x.shade) : ""}
-      ${seg("xMethod", "Method", [["shap", "SHAP · blank", !shapAvailable(), shapAvailable() ? "" : "Precomputed by the XAI run for library curves only"], ["occlusion", "Occlusion"]], S.occ.method)}
+      ${seg("xMethod", "Method", [["shap", "SHAP · blank", !shapAvailable(), shapAvailable() ? "" : "Library curves, or an upload with its blank (20 mV)"], ["occlusion", "Occlusion"]], S.occ.method)}
       ${seg("xWidth", "Window", [[5, "20 mV"], [10, "40 mV"]], S.x.width)}
-      ${shap ? "" : seg("xFill", "Fill", [["R1", "Train mean", !canR1, canR1 ? "Training mean of the same coating" : "Needs the coating"], ["R0", "Zero"], ["R3", "Bridge"]], S.x.fill)}
+      ${shap ? "" : seg("xFill", "Fill", [["R2", "Blank", !blankRef(), blankRef() ? "The blank of the same electrode (as the chemist report)" : "Needs a blank"], ["R1", "Train mean", !canR1, canR1 ? "Training mean of the same coating" : "Needs the coating"], ["R0", "Zero"], ["R3", "Bridge"]], S.x.fill)}
       ${seg("xScale", "Scale", [["logit", "Log-odds"], ["dp", "P"]], S.x.scale)}
     </div>
     ${test ? `<p class="xai-test"><b>From the XAI tests</b> (${shap ? "SHAP · R2" : `occlusion · ${S.x.fill}`}, ${unitKey().replace("mV", " mV")}): on the PVDF peak test the map beats 95% of random placements in ${pct0(test.e3.hit)} of analyte × seed cases (mean percentile ${test.e3.percentile.toFixed(2)}); edge share P4VP ${pct0(test.edge.P4VP)} · PVDF ${pct0(test.edge.PVDF)} (an even spread would be 10%).</p>` : ""}
     <svg class="heat" id="heatChart" role="img" aria-label="Explanation map, four analytes by window"></svg>
-    <div class="legend-ramp"><span>${shap ? "toward absent" : "masking raises the score"}</span><i></i><span>${shap ? "toward present" : "masking lowers it"}</span>${Object.values(windows).some(Boolean) ? `<span class="legend-win"><b></b>peak window (E3)</span>` : ""}<span style="margin-left:auto">${S.occ.units.length} windows${shap ? " · from the XAI run" : ` · ${S.occMs.toFixed(1)} ms here`}</span></div>
+    <div class="legend-ramp"><span>${shap ? "toward absent" : "masking raises the score"}</span><i></i><span>${shap ? "toward present" : "masking lowers it"}</span>${Object.values(windows).some(Boolean) ? `<span class="legend-win"><b></b>peak window (E3)</span>` : ""}<span style="margin-left:auto">${S.occ.units.length} windows${shap ? (S.occ.source === "kimyager" ? " · 20,000 coalitions against the blank" : " · from the XAI run") : ` · ${S.occMs.toFixed(1)} ms here`}</span></div>
     <p class="rs-label">Reading the map for ${esc(a.name.toLowerCase())}</p>
     <p class="xai-text">${narrative(S, k)}</p>
     ${S.xai ? `<p class="rs-label">Model-wide · permutation importance (${esc(S.x.polymer)})</p>

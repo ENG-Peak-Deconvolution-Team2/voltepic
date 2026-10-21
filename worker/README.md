@@ -7,16 +7,20 @@ It is deliberately narrow:
 
 - **Origin**: answers only `https://eng-peak-deconvolution-team2.github.io` (and `127.0.0.1:8765` / `localhost:8765`
   for local testing). Origin can be forged outside a browser, so the next two limits carry the weight.
-- **Input**: only the analyzer's fact packet (5–24 facts of ≤ 400 characters, four decisions, known card keys) and, for
-  follow-up questions, up to 8 earlier turns and a question of ≤ 600 characters. The Worker builds the conversation
-  itself with `assets/js/llm/packet.js` → `buildContents` and `data/llm.json` — the same code and text the site uses.
-  A question is free text, so the shared access can be asked off-topic things inside the report rules; the rate limit
-  and the question length bound what that costs.
+- **Input**: only the analyzer's chemist-report evidence file (version `kimyager_raporu…`, four decisions, four analyte
+  branches) with the kind of call (`rapor` or `soru`); for a question also the report given (≤ 4,000 characters) and the
+  question (≤ 600); for a rewrite at most 2 earlier attempts with their code-check findings. The Worker builds the message
+  itself with `assets/js/llm/kanit.js` (`pyJson`) and `assets/js/llm/denetim.js` (`mesajRapor`, `mesajSoru`, `duzeltme`),
+  and takes the system prompt from `data/kimyager_istem.json` — the same code and text the site uses. A question is free
+  text, so the shared access can be asked off-topic things inside the prompt's rules; the rate limit and the question
+  length bound what that costs.
+- **Status (2026-10-21)**: changed to the evidence-file protocol, not deployed; `SHARED` in `gemini.js` is empty, so the
+  site uses only a visitor's own key.
 - **Models**: `gemini-3.8-flash`, `gemini-2.5-flash`.
 - **Rate**: 4 reports per minute per IP (Workers rate-limiting binding).
 
-What is sent to Google is the same as with a visitor's own key: the facts (for library curves also chip, date and
-channel; never the raw curve or the file name). The project key's tier decides Google's terms (free tier: content may
+What is sent to Google is the same as with a visitor's own key: the evidence file (with the chip name; never the raw
+curve, the blank curve or the file name). The project key's tier decides Google's terms (free tier: content may
 be used to improve Google's models and read by human reviewers).
 
 ## Deploy

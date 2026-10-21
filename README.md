@@ -38,44 +38,59 @@ Chosen from the ENG WP5 XAI run by what landed on the peaks in its tests:
   reliable method in the 2026-10-11 results (on the peak for 4/4 analytes on PVDF, stable 0.89, no
   edge bias) — drawn next to the analyte's E3 peak window.
 - **This curve, library:** KernelSHAP with the blank of the same chip, day and electrode as
-  reference (R2) — across all fills, the local method that lands on the peak most often.
+  reference (R2) — across all fills, the local method that lands on the peak most often. At 20 mV the values are
+  the chemist report's own (`data/kimyager.json`, 20,000 coalitions); other widths come from the XAI run (`xai.json`).
 - **This curve, uploads:** occlusion computed in the browser; default fill is the training mean (R1),
-  the straight-line bridge (R3) is offered but was flagged for edge bias.
+  the straight-line bridge (R3) is offered but was flagged for edge bias. Once a blank is added
+  (01 · Measurement, one or more files, their mean is used), the browser also computes KernelSHAP against it
+  (`assets/js/engine/shap.js`, 20 mV, 20,000 coalitions, about 4–6 s) and the blank fill R2 is offered.
 
 ## Chemist report (Gemini)
 
 The assistant has two modes, switched in its header: **Quick** (answers composed by rules) and **Gemini**. In Gemini mode
-*Kimyager raporu yaz* turns the current result into a report in Turkish, and follow-up questions are answered from the same
-packet, with the report and earlier answers as context; every answer is checked like the report. The language model only
-rephrases; everything it may say is computed first, in the browser:
+*Kimyager raporu yaz* turns the current result into a 3–5 sentence report in plain Turkish: what the model said, whether
+its basis is chemically sound, anything suspicious, what to check in the lab. Follow-up questions are answered (1–4
+sentences) from the same evidence file, with the report as context. It is the pipeline of
+`literature/xai_llm_rag/kimyager_raporu/rapor.py`, ported to the browser; the language model only writes, everything it
+may say is computed first:
 
-1. **Packet** (`assets/js/llm/packet.js`) — numbered facts `F01 …`: acquisition, coating and domain, the four decisions
-   with threshold distance, the region pushing each decision most toward VAR and toward YOK with its peak-window and
-   curve-end flags, the peak centres, and the method's model-level test record. Library curves use KernelSHAP (blank
-   reference) from `xai.json`; uploads use the browser's occlusion, with an unknown coating and no peak windows.
-   The sample id and block are not sent: they come from the file name, which carries the true concentrations.
-2. **Prompt** — the system prompt and the knowledge cards of the tested prototype (`data/llm.json`, exported by
-   `tools/export_llm.py` from `literature/xai_llm_rag/prototip/`, prompt v0.2).
-3. **Gemini** (`assets/js/llm/gemini.js`) — REST `generateContent`, either from the browser with the visitor's own API
-   key (Google AI Studio; stored in this browser's localStorage and sent only to Google) or, without one, through the
-   project's shared access: a Cloudflare Worker that holds the project key as a secret and accepts only this packet
-   (`worker/`, see its README). No key ships with the site. On the free tier Google may use what is sent to improve its
-   models and human reviewers may read it.
-4. **Check** (`assets/js/llm/verify.js`) — every sentence against the packet: a fact cited, numbers present in the cited
-   facts or cards, decisions not contradicted, curve-end regions not presented as peaks. Findings are listed under the
-   report; the facts sent are shown beside it.
+1. **Basis labels** (`assets/js/llm/kanit.js`, `degerlendir`) — code sets one label per decision from the XAI tests
+   (`güçlü`, `orta`, `zayıf`, `şüpheli`, `yerinde`, `gösterilemedi`): do SHAP and occlusion against the blank point to the
+   same 20 mV slice, does it fall in the analyte's peak window and among the model's PFI top 3, is it a scan edge, is the
+   decision near the threshold, does the blank itself get the same decision. The model never sets a label.
+2. **Evidence file** (`kanitDosyasi`) — about 93 records in six branches: the decisions with their labels and reasons, the
+   regions both explanations point to toward and against each decision (top 3 and top 2 slices), where the model
+   generally looks (PFI, SAGE), the expected peak windows, the peaks seen in the curve, check suggestions and general
+   notes. Library curves use `data/kimyager.json` (rapor.py's explanations, exported by `tools/export_kimyager.py`);
+   uploads need a blank and the coating (01 · Measurement; the coating is read from the chip name when it is a known
+   training chip). The file name, the raw curve and the blank curve are not sent.
+3. **Gemini** (`assets/js/llm/gemini.js`) — REST `generateContent` with the system prompt of `data/kimyager_istem.json`,
+   either from the browser with the visitor's own API key (Google AI Studio; stored in this browser's localStorage and
+   sent only to Google) or through the project's shared access, a Cloudflare Worker that holds the project key as a
+   secret and accepts only this evidence file (`worker/`, see its README; not deployed, so the site uses a visitor's own
+   key). No key ships with the site. On the free tier Google may use what is sent to improve its models and human
+   reviewers may read it.
+4. **Check** (`assets/js/llm/denetim.js`) — 8 rules on every text: sentence count and length, technical terms, record
+   IDs, numbers not in the evidence file, "peak is here" claims, contradicted decisions, scan-edge regions, first person.
+   With findings, Gemini gets one rewrite with them; what is left is listed under the text. The report bubble also shows
+   the basis labels and the full evidence file sent.
 
 ```
-node tools/llm_parity.mjs
+node tools/kimyager_parity.mjs [--shap]
 ```
 
-compares the packet, the prompt and the check with the Python prototype. Its fixture
-(`tools/fixtures/llm_parity.json`, written by `export_llm.py --fixture` from the research workspace) is not part of this
-repository. Last run: 125/125 library packets (2,093 facts),
-5/5 prompts of the v0.2 run and 46/46 reports with identical findings (2026-10-20). Measured on the report task
-(5 curves): Gemini 3.8 Flash 0 decision errors and no findings of its own; Gemini 2.5 Flash 0 decision errors but
-once described the score as a presence probability, which the check does not catch
-(`literature/xai_llm_rag/prototip/kosu_2026-10-20_v02/`).
+compares the evidence file, the labels, the check and the messages with rapor.py. Its fixture
+(`tools/fixtures/kimyager_parity.json`, written by `export_kimyager.py --fixture`) holds unpublished LLM outputs and is
+not part of this repository. Last run (2026-10-21): evidence file identical JSON text on 125/125 library curves, basis
+labels 125/125, check findings identical on 170/170 texts (the runs' real reports and altered copies), report and question
+messages identical. `--shap`: the browser's KernelSHAP (its own sampler) against Python's on 5 curves — 4.1–4.3 s each,
+max |Δ| 0.17–0.27 against a largest |φ| of 3.3–5.4, the same basis labels on 5/5. In the browser (headless Edge,
+2026-10-21): library curve 12 report and one question with Gemini 3.8 Flash, both passed the check; an MC333 upload with
+three blanks (a chip the model was not trained on), blank SHAP in 4–6 s, also with the page in a background tab, and its
+report passed the check on the first attempt, flagging the ascorbic acid decision (wrong by the file's composition) as
+weak. Measured on the report task with rapor.py: Gemini 3.8 Flash 7/7 texts passed the
+check and made no wrong claim (`literature/xai_llm_rag/kimyager_raporu/kosu_gemini_2026-10-21/`). The earlier packet
+pipeline (v0.3) is archived in `literature/xai_llm_rag/prototip/site_paket_v03_2026-10-21/`.
 
 ## Inputs
 
@@ -84,6 +99,8 @@ once described the score as a presence probability, which the check does not cat
   A, mA, µA or nA), a single column of 200 currents on the model grid, or a raw CHI760F `.txt`
   export (both working electrodes are offered when present). Curves are linearly resampled to the
   model grid: 200 points, 0.004–0.800 V, 4 mV steps.
+- **Blank and coating (uploads, for the chemist report):** one or more blank files of the same electrode, in any of the
+  formats above (their mean is the reference), and the coating, PVDF or P4VP.
 
 The model has only seen ACS-ML-Biomarker chips (P4VP or PVDF coating, CHI760F, SWV 25 mV, 5 Hz).
 For curves recorded under other conditions its probabilities are not calibrated, and it cannot tell.
@@ -124,18 +141,19 @@ assets/js/app/             analyzer: main.js (state, run, instrument), report.js
 assets/js/pages/           one module per page
 assets/js/io.js            CSV / CHI parsing and resampling
 assets/js/assistant.js     assistant: scripted answers + the Gemini report
-assets/js/llm/             report pipeline: packet, verify, gemini, render, report
+assets/js/llm/             chemist report: kanit (labels, evidence file), denetim (check, messages), gemini, report
 worker/                    Cloudflare Worker: shared Gemini access with the project key (secret)
-assets/js/engine/          wavelet transform, model, occlusion
+assets/js/engine/          wavelet transform, model, occlusion, KernelSHAP (shap.js)
 data/model.json            exported model
 data/library.json          held-out curves, metadata, mean blanks, Python reference scores
 data/xai.json              XAI run results for this model: per-curve SHAP (R2), PFI, E3 windows, test numbers
-data/llm.json              report writer's system prompt and knowledge cards (from the prototype)
+data/kimyager.json         chemist report: per library curve SHAP / occlusion against the blank, the blank, model-level notes
+data/kimyager_istem.json   chemist report system prompts (report, question)
 tools/export_model.py      regenerates model.json / library.json from the research workspace
 tools/export_xai.py        regenerates xai.json; checks that the run's rows and model are the site's
 tools/parity.mjs           JS ↔ Python parity test
-tools/export_llm.py        regenerates llm.json (+ --fixture: tools/fixtures/llm_parity.json)
-tools/llm_parity.mjs       report pipeline ↔ Python prototype parity test
+tools/export_kimyager.py   regenerates kimyager.json / kimyager_istem.json (+ --fixture: tools/fixtures/kimyager_parity.json)
+tools/kimyager_parity.mjs  chemist report ↔ rapor.py parity test
 ```
 
 No build step: any static server works (`python -m http.server`), and GitHub Pages serves `main`.

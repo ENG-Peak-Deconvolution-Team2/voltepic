@@ -3,8 +3,9 @@
 import "../site.js";
 import { observeReveal } from "../site.js";
 import { $, $$, esc, conc, fmtI, currentUnit, toast, sleep, nextFrame, segmented, download, reducedMotion } from "../ui.js";
-import { ANALYTES, CODES, GRID_E as E, getModel, getLibrary, getXai } from "../data.js";
+import { ANALYTES, CODES, GRID_E as E, getModel, getLibrary, getXai, loadJson } from "../data.js";
 import { occlusion } from "../engine/xai.js";
+import { kernelShap } from "../engine/shap.js";
 import { createSignalChart } from "../chart.js";
 import { parseText, toGrid, toCsv } from "../io.js";
 import { createAssistant } from "../assistant.js";
@@ -15,7 +16,8 @@ const FEATURED = 38;
 
 /** Everything the report and the assistant read. */
 export const S = {
-  model: null, json: null, library: null, xai: null,
+  model: null, json: null, library: null, xai: null, kimLib: null,
+  kim: null,   // upload: explanation against the uploaded blank { shap, shap_p, occ, p_blank, blank, nBlank } (chemist report)
   libProbs: [], bench: null, parity: null,
   sample: null, unit: { f: 1, u: "µA" }, qc: null, result: null, timings: null, occ: null, occMs: 0,
   x: { method: "shap", shade: "pfi", width: 5, fill: "R1", scale: "logit", analyte: 0, polymer: "PVDF", userMethod: null, picked: false },
@@ -30,7 +32,7 @@ const assistant = createAssistant({
   ctx: () => ({
     result: S.result, occ: S.occ, qc: S.qc, analytes: S.model?.analytes ?? [], thresholds: S.model?.thresholds ?? [],
     E, widthMv: S.x.width * 4, labels: S.sample?.labels ?? null, bench: S.bench, peakWindow,
-    sample: S.sample, xai: S.xai, grid: S.json?.grid, acquisition: S.acquisition, width: S.x.width, fill: S.x.fill,
+    sample: S.sample, xai: S.xai, grid: S.json?.grid, acquisition: S.acquisition, width: S.x.width, fill: S.x.fill, kim: S.kim,
   }),
   actions: { explain: async () => {} },
 });
@@ -41,8 +43,8 @@ async function boot() {
   assistant.reset();
   renderVerdicts(true);
   try {
-    const [{ json, model }, library, xai] = await Promise.all([getModel(), getLibrary(), getXai()]);
-    Object.assign(S, { json, model, library: library.samples, acquisition: library.acquisition, xai });
+    const [{ json, model }, library, xai, kimLib] = await Promise.all([getModel(), getLibrary(), getXai(), loadJson("kimyager").catch(() => null)]);
+    Object.assign(S, { json, model, library: library.samples, acquisition: library.acquisition, xai, kimLib });
   } catch (err) {
     $("#chartLoading").innerHTML = `<span>Could not load the model: ${esc(err.message)}</span>`;
     return;
@@ -92,8 +94,9 @@ export async function loadSample(sample, { quiet = false } = {}) {
   S.result = null;
   S.occ = null;
   S.x.picked = false;
+  if (sample.source === "library") S.kim = null;
   if (sample.polymer) S.x.polymer = sample.polymer;
-  S.x.method = sample.source === "library" && S.xai ? (S.x.userMethod ?? "shap") : "occlusion";
+  S.x.method = (sample.source === "library" && S.xai) || S.kim ? (S.x.userMethod ?? "shap") : "occlusion";
   if (S.x.fill === "R1" && !S.model.r1[sample.polymer]) S.x.fill = "R3";
   S.unit = currentUnit(Math.max(...Array.from(sample.I, Math.abs)));
   if (sample.source === "library") history.replaceState(null, "", `#s=${sample.index}`);
@@ -192,7 +195,10 @@ function findPeaks(y, minProminence) {
 /* ───────────── Explanation ───────────── */
 const logit = (p) => { const q = Math.min(Math.max(p, 1e-12), 1 - 1e-12); return Math.log(q) - Math.log1p(-q); };
 export const unitKey = () => (S.x.width === 5 ? "20mV" : "40mV");
-export const shapAvailable = () => !!S.xai && S.sample?.source === "library";
+/** SHAP against the blank: library curves (XAI run; 20 mV from the chemist-report export), uploads once a blank is added (20 mV). */
+export const shapAvailable = () => (!!S.xai && S.sample?.source === "library") || (!!S.kim && S.x.width === 5);
+/** The blank curve the explanations compare with (R2), or null. */
+export const blankRef = () => (S.sample?.source === "library" ? S.kimLib?.samples[S.sample.index]?.blank ?? null : S.kim?.blank ?? null);
 
 /** E3 peak window of analyte k (PVDF only — the test found none on P4VP). */
 export function peakWindow(k, polymer = S.sample?.polymer) {
@@ -203,17 +209,21 @@ function computeExplanation() {
   if (S.x.method === "shap" && !shapAvailable()) S.x.method = "occlusion";
   if (S.x.fill === "R1" && !S.model.r1[S.sample.polymer]) S.x.fill = "R3";
   const t = performance.now();
+  if (S.x.fill === "R2" && !blankRef()) S.x.fill = "R3";
   if (S.x.method === "shap") {
-    const d = S.xai.shap[unitKey()];
-    const i = S.sample.index;
     const w = S.x.width;
+    // 20 mV: the chemist report's own SHAP (20,000 samples; library export or computed here for an upload), else the XAI run
+    const k = w === 5 ? (S.sample.source === "library" ? S.kimLib?.samples[S.sample.index] : S.kim) : null;
+    const d = k ? null : S.xai.shap[unitKey()], i = S.sample.index;
+    const rows = k ? k.shap : d.logit[i], rowsP = k ? k.shap_p : d.probability[i];
+    const refP = k ? k.p_blank : d.base_probability[i];
     S.occ = {
-      method: "shap",
-      units: d.logit[i].map((row, j) => ({ i0: j * w, i1: (j + 1) * w, dlogit: row, dp: d.probability[i][j] })),
-      base: S.result.probs, baseLogit: S.result.probs.map(logit), refLogit: d.base_logit[i], refP: d.base_probability[i],
+      method: "shap", source: k ? "kimyager" : "xai",
+      units: rows.map((row, j) => ({ i0: j * w, i1: (j + 1) * w, dlogit: row, dp: rowsP[j] })),
+      base: S.result.probs, baseLogit: S.result.probs.map(logit), refLogit: refP.map(logit), refP,
     };
   } else {
-    const reference = S.x.fill === "R1" ? S.model.r1[S.sample.polymer] : null;
+    const reference = S.x.fill === "R1" ? S.model.r1[S.sample.polymer] : S.x.fill === "R2" ? blankRef() : null;
     S.occ = { method: "occlusion", ...occlusion(S.model, S.sample.I, { width: S.x.width, fill: S.x.fill, reference }) };
   }
   S.occMs = performance.now() - t;
@@ -355,8 +365,10 @@ async function handleFile(file) {
     const sample = {
       source: "upload", file: file.name, sourceLabel: parsed.source, params: parsed.params,
       channels: parsed.channels, channelIndex: 0, E: parsed.E, inputPoints: parsed.E.length,
-      inputRange: [Math.min(...parsed.E), Math.max(...parsed.E)], labels: null, blank: null, polymer: null,
+      inputRange: [Math.min(...parsed.E), Math.max(...parsed.E)], labels: null, blank: null,
+      polymer: S.kimLib?.chip_polymer[file.name.match(/MC\d+/)?.[0]] ?? null,   // coating from the chip in the file name, if known
     };
+    S.kim = null;
     applyChannel(sample, 0);
     if (parsed.channels.length > 1) toast(`Two working electrodes found (${parsed.channels.map((c) => c.name).join(", ")}); using ${parsed.channels[0].name}. Switch in Measurement.`, "info", 6000);
     for (const w of sample.warnings) toast(w, "info", 6000);
@@ -371,9 +383,60 @@ function applyChannel(sample, i) {
   const g = toGrid(sample.E, ch.I);
   Object.assign(sample, { channelIndex: i, channelName: ch.name, I: g.I, resampled: g.resampled, warnings: g.warnings });
 }
-export function useChannel(i) {
+export async function useChannel(i) {
   applyChannel(S.sample, i);
-  loadSample(S.sample, { quiet: true });
+  if (S.sample.blankParsed) S.kim = null;
+  await loadSample(S.sample, { quiet: true });
+  if (S.sample.blankParsed) await refreshKim();
+}
+
+/* ───────────── Upload: blank and coating (chemist report) ───────────── */
+/** Blank file(s) of the same electrode for an uploaded curve; their mean is the reference of both explanations. */
+export async function addBlank(fileList) {
+  const s = S.sample;
+  if (!s || s.source !== "upload" || !fileList?.length) return;
+  try {
+    s.blankParsed = await Promise.all([...fileList].map(async (f) => ({ name: f.name, parsed: parseText(await f.text(), f.name) })));
+  } catch (err) {
+    toast(`Could not read the blank: ${err.message}`, "error", 6000);
+    return;
+  }
+  s.blankFiles = s.blankParsed.map((b) => b.name);
+  await refreshKim();
+}
+
+/** SHAP (20,000 coalitions) and occlusion against the blank, as rapor.acikla; about 4 s in the browser. */
+async function refreshKim() {
+  const s = S.sample;
+  const curves = s.blankParsed.map(({ parsed }) => toGrid(parsed.E, parsed.channels[Math.min(s.channelIndex, parsed.channels.length - 1)].I).I);
+  const blank = Float64Array.from(curves[0], (_, j) => curves.reduce((a, c) => a + c[j], 0) / curves.length);
+  s.blank = blank;
+  S.kim = null;
+  s.kimBusy = true;
+  R.render(S);
+  const status = (txt) => { const el = $("#blankStatus"); if (el) el.textContent = txt; };
+  const shap = await kernelShap(S.model, s.I, blank, { onProgress: (d, n) => status(`Explaining against the blank… ${Math.round((100 * d) / n)}%`) });
+  if (S.sample !== s) return;
+  const occ = occlusion(S.model, s.I, { width: 5, fill: "R2", reference: blank });
+  S.kim = { shap: shap.logit, shap_p: shap.probability, occ: occ.units.map((u) => u.dlogit), p_blank: S.model.score(blank).probs, blank, nBlank: curves.length };
+  s.kimBusy = false;
+  if (S.x.userMethod == null) S.x.method = "shap";
+  S.x.width = 5;
+  computeExplanation();
+  R.render(S);
+  drawChart(false);
+  assistant.renderSuggestions();
+  toast(`Blank added (${curves.length} file${curves.length > 1 ? "s" : ""}). The chemist report can compare the curve with it now.`, "info", 5000);
+}
+
+/** Coating of an uploaded curve (PVDF / P4VP): the peak windows and the model-level profile depend on it. */
+export function setCoating(v) {
+  S.sample.polymer = v;
+  S.x.polymer = v;
+  if (S.x.fill === "R1" && !S.model.r1[v]) S.x.fill = "R3";
+  R.render(S);
+  drawChart(false);
+  assistant.renderSuggestions();
 }
 
 /* ───────────── Assistant ───────────── */

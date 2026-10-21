@@ -6,3 +6,5 @@ tools/fixtures/llm_parity.json
 worker/.wrangler/
 worker/.dev.vars
 worker/node_modules/
+# chemist-report parity fixture: holds unpublished LLM outputs, kept local
+tools/fixtures/kimyager_parity.json
