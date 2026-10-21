@@ -65,11 +65,14 @@ may say is computed first:
    uploads need a blank and the coating (01 · Measurement; the coating is read from the chip name when it is a known
    training chip). The file name, the raw curve and the blank curve are not sent.
 3. **Gemini** (`assets/js/llm/gemini.js`) — REST `generateContent` with the system prompt of `data/kimyager_istem.json`,
-   either from the browser with the visitor's own API key (Google AI Studio; stored in this browser's localStorage and
-   sent only to Google) or through the project's shared access, a Cloudflare Worker that holds the project key as a
-   secret and accepts only this evidence file (`worker/`, see its README; not deployed, so the site uses a visitor's own
-   key). No key ships with the site. On the free tier Google may use what is sent to improve its models and human
-   reviewers may read it.
+   called from the browser with the site's key or a visitor's own. The site's key ships only encrypted
+   (`data/gemini_key.json`: PBKDF2-SHA256, 600,000 iterations → AES-256-GCM, written by `tools/encrypt_key.mjs`); the
+   site password, asked once and remembered in this browser, opens it. It keeps the key out of plain text in the public
+   repository; it is not access control: the password is short, so anyone with the file can find it by trying. All users
+   share that key's quota (free tier: about 20 requests per model per day; a report takes 1–2). A visitor can paste an
+   own key (Google AI Studio) in the same box instead; it stays in this browser's localStorage and is sent only to
+   Google. The Cloudflare Worker in `worker/` (the key as a server-side secret) is an alternative, not deployed. On the
+   free tier Google may use what is sent to improve its models and human reviewers may read it.
 4. **Check** (`assets/js/llm/denetim.js`) — 8 rules on every text: sentence count and length, technical terms, record
    IDs, numbers not in the evidence file, "peak is here" claims, contradicted decisions, scan-edge regions, first person.
    With findings, Gemini gets one rewrite with them; what is left is listed under the text. The report bubble also shows
@@ -149,11 +152,13 @@ data/library.json          held-out curves, metadata, mean blanks, Python refere
 data/xai.json              XAI run results for this model: per-curve SHAP (R2), PFI, E3 windows, test numbers
 data/kimyager.json         chemist report: per library curve SHAP / occlusion against the blank, the blank, model-level notes
 data/kimyager_istem.json   chemist report system prompts (report, question)
+data/gemini_key.json       the site's Gemini key, encrypted with the site password
 tools/export_model.py      regenerates model.json / library.json from the research workspace
 tools/export_xai.py        regenerates xai.json; checks that the run's rows and model are the site's
 tools/parity.mjs           JS ↔ Python parity test
 tools/export_kimyager.py   regenerates kimyager.json / kimyager_istem.json (+ --fixture: tools/fixtures/kimyager_parity.json)
 tools/kimyager_parity.mjs  chemist report ↔ rapor.py parity test
+tools/encrypt_key.mjs      writes gemini_key.json (GEMINI_API_KEY=… SITE_PASSWORD=… node tools/encrypt_key.mjs)
 ```
 
 No build step: any static server works (`python -m http.server`), and GitHub Pages serves `main`.

@@ -246,6 +246,7 @@
 .gem-form input:focus, .gem-form select:focus { border-color: var(--ink-2); outline: none; }
 .gem-small { color: var(--muted); font-size: 12px; }
 .gem-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.gem-error { color: var(--warning); font-size: 12.5px; }
 
 /* ───────────── Library sheet ───────────── */
 .sheet { width: min(1100px, calc(100vw - 24px)); height: min(820px, calc(100vh - 48px)); padding: 0; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg); overflow: hidden; }

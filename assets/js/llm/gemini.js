@@ -1,11 +1,14 @@
 // Gemini API from the browser (REST generateContent, CORS-enabled). Two paths:
 //  · the visitor's own key, kept in this browser's localStorage and sent only to generativelanguage.googleapis.com;
-//  · without one, VoltEPIC's shared access: a Cloudflare Worker (worker/) that holds the project's key as a secret and
-//    accepts only the analyzer's evidence file. Nothing here ships a key.
+//  · the site's key, shipped only encrypted (data/gemini_key.json, tools/encrypt_key.mjs) and opened in the browser with
+//    the site password; then it is used like a visitor's own key;
+//  · VoltEPIC's shared access: a Cloudflare Worker (worker/) that holds the project's key as a secret and accepts only the
+//    analyzer's evidence file (not deployed).
 
 const API = "https://generativelanguage.googleapis.com/v1beta";
 const KEY = "voltepic.gemini.key";
 const MODEL = "voltepic.gemini.model";
+const PASS = "voltepic.gemini.sitepass";
 const SHARED = "";                                   // deployed Worker URL, e.g. https://voltepic-gemini.<account>.workers.dev
 
 /** Models offered. Gemini 3.8 Flash measured on the evidence-file report, 2026-10-21 (literature/xai_llm_rag/kimyager_raporu/
@@ -19,7 +22,7 @@ const store = {
   get: (k) => { try { return localStorage.getItem(k) ?? ""; } catch { return ""; } },
   set: (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch { /* storage blocked: key lives for this page only */ } },
 };
-let memoryKey = "";
+let memoryKey = "", siteKey = "";
 
 /** The shared-access URL ("" = none); a local Worker can be tried with localStorage voltepic.gemini.shared. */
 export const shared = () => store.get("voltepic.gemini.shared") || SHARED;
@@ -32,8 +35,35 @@ export function cleanKey(raw) {
   return (s.split(/\s+/)[0] ?? "").replace(/^[A-Z_]+=/, "").replace(/^["'`]+|["'`]+$/g, "");
 }
 
-export const getKey = () => cleanKey(store.get(KEY)) || memoryKey;
+export const looksLikeKey = (raw) => /AIza[\w-]{30,}|AQ\.[\w.-]{20,}/.test(String(raw ?? ""));
+export const ownKey = () => cleanKey(store.get(KEY)) || memoryKey;
+export const getKey = () => ownKey() || siteKey;
+export const usingSiteKey = () => !ownKey() && !!siteKey;
 export function setKey(k) { memoryKey = cleanKey(k); store.set(KEY, memoryKey); }
+
+/** Opens the site's key with the site password (PBKDF2-SHA256 → AES-GCM); a wrong password fails the GCM check. */
+export async function unlockSiteKey(password) {
+  const f = await fetch(new URL("../../../data/gemini_key.json", import.meta.url)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (!f) throw new Error("This site has no built-in key.");
+  const bytes = (b) => Uint8Array.from(atob(b), (ch) => ch.charCodeAt(0));
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+  const aes = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: bytes(f.salt), iterations: f.iterations }, base,
+    { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  try {
+    siteKey = new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes(f.iv) }, aes, bytes(f.ct)));
+  } catch {
+    throw new Error("Wrong site password.");
+  }
+  store.set(PASS, password);
+}
+
+/** The site key again from the password this browser remembers (no-op when there is none or it no longer opens). */
+export async function restoreSiteKey() {
+  const p = store.get(PASS);
+  if (!p || siteKey) return;
+  try { await unlockSiteKey(p); } catch { store.set(PASS, ""); }
+}
+export function forgetSiteKey() { siteKey = ""; store.set(PASS, ""); }
 export const getModel = () => store.get(MODEL) || MODELS[0].id;
 export const setModel = (m) => store.set(MODEL, m);
 

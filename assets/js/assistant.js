@@ -3,7 +3,7 @@
 // with the visitor's own API key or, when configured, VoltEPIC's shared access.
 
 import { esc, pct, conc, sleep, reducedMotion, fmtI, download, toast, segmented } from "./ui.js";
-import { getKey, setKey, setModel, getModel as getGeminiModel, shared } from "./llm/gemini.js";
+import { getKey, ownKey, setKey, setModel, getModel as getGeminiModel, shared, looksLikeKey, unlockSiteKey, restoreSiteKey, forgetSiteKey } from "./llm/gemini.js";
 import { conversationFor, converse, reportHtml, answerHtml, reportMarkdown, keyFormHtml, label } from "./llm/report.js";
 
 const SUGGESTIONS = [
@@ -74,7 +74,7 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
   }
 
   const geminiIntro = () => `Gemini mode: ask for the <b>chemist report</b>, then ask follow-up questions. Answers are in Turkish, built only from `
-    + `this analysis's evidence file (decisions, basis labels, regions against the blank, peak windows), and code checks every text.${getKey() || shared() ? "" : " A Gemini API key is needed."}`;
+    + `this analysis's evidence file (decisions, basis labels, regions against the blank, peak windows), and code checks every text.${getKey() || shared() ? "" : " The first time, enter the site password."}`;
 
   async function ask(question, intent) {
     if (busy || !question.trim()) return;
@@ -112,6 +112,7 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
   async function geminiTurn(question) {
     const c = ctx();
     if (!c.result) { bubble("bot", `No analysis yet. Pick a sample from the library or upload a file first.`); return; }
+    await restoreSiteKey();
     if (!getKey() && !shared()) { keyForm(question); return; }
     let next;
     try { next = await conversationFor(c, conv); } catch (err) { bubble("bot", esc(err.message)); return; }
@@ -142,13 +143,18 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
 
   /** Key and model form; on submit it runs the pending turn (`pending`: null = report, string = question). */
   function keyForm(pending) {
-    const el = bubble("bot msg-report", keyFormHtml(!!getKey()));
+    const el = bubble("bot msg-report", keyFormHtml(!!ownKey()));
     const form = el.querySelector("form");
     form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       if (busy) return;
       const k = form.key.value.trim();
-      if (k) setKey(k);
+      const err = form.querySelector(".gem-error");
+      if (k && looksLikeKey(k)) setKey(k);
+      else if (k) {
+        try { await unlockSiteKey(k); } catch (e) { err.textContent = e.message; err.hidden = false; form.key.select(); return; }
+      }
+      err.hidden = true;
       setModel(form.model.value);
       if (!getKey() && !shared()) { form.key.focus(); return; }
       form.querySelectorAll("input, select, button").forEach((x) => { x.disabled = true; });
@@ -158,9 +164,10 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
       renderSuggestions();
     });
     form.querySelector("[data-act=forget]")?.addEventListener("click", () => {
-      setKey("");
+      const own = !!ownKey();
+      if (own) setKey(""); else forgetSiteKey();
       form.querySelectorAll("input, select, button").forEach((x) => { x.disabled = true; });
-      bubble("bot", `The Gemini key was removed from this browser.`);
+      bubble("bot", own ? `The Gemini key was removed from this browser.` : `The site password was removed from this browser.`);
     });
   }
 

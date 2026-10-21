@@ -5,7 +5,7 @@
 
 import { degerlendir, kanitDosyasi, pyJson, chipOf, IDS } from "./kanit.js";
 import { denetle, mesajRapor, mesajSoru, duzeltme, tekSatir } from "./denetim.js";
-import { generate, generateShared, shared, getKey, getModel, MODELS } from "./gemini.js";
+import { generate, generateShared, shared, getKey, ownKey, usingSiteKey, getModel, MODELS } from "./gemini.js";
 import { loadJson } from "../data.js";
 import { esc } from "../ui.js";
 
@@ -71,7 +71,7 @@ export async function converse(conv, question, { model = getModel(), signal } = 
   }
   if (rapor) conv.report = metin;
   conv.turns.push({ q: question, a: metin });
-  return { conv, question, text: metin, bulgu, deneme, mesaj, model, res: { ...res, text: metin, ms }, via: key ? "your key" : "VoltEPIC's shared access" };
+  return { conv, question, text: metin, bulgu, deneme, mesaj, model, res: { ...res, text: metin, ms }, via: usingSiteKey() ? "the site's key" : key ? "your key" : "VoltEPIC's shared access" };
 }
 
 export const label = (id) => MODELS.find((m) => m.id === id)?.label ?? id;
@@ -117,9 +117,9 @@ export function reportMarkdown(out, title) {
     "## Evidence file sent to the model", "", "```json", out.conv.metin, "```", ""].join("\n");
 }
 
-/** The key / model form. */
+/** The site password / key / model form; `hasKey`: the visitor saved a key of their own. */
 export function keyFormHtml(hasKey) {
-  const sharedOn = !!shared();
+  const sharedOn = !!shared(), siteOn = usingSiteKey();
   const opts = MODELS.map((m) => `<option value="${m.id}"${m.id === getModel() ? " selected" : ""}>${esc(m.label)}</option>`).join("");
   return `<form class="gem-form" autocomplete="off">
     <p><b>Chemist report, written by Gemini.</b> The analyzer builds an evidence file from this result: the four decisions, a basis
@@ -127,14 +127,16 @@ export function keyFormHtml(hasKey) {
       generally looks, the expected peak windows and the peaks seen in the curve. Gemini writes 3–5 plain sentences in Turkish and
       answers follow-up questions from the same file; code checks every text and asks for one rewrite if it finds a problem.</p>
     ${sharedOn ? `<p class="gem-small">No key needed: without one, reports go through VoltEPIC's shared access (the project's key, a few reports a minute per visitor). With your own key they go straight from your browser to Google.</p>` : ""}
-    <label>Gemini API key${sharedOn ? " (optional)" : ""}<input name="key" type="password" spellcheck="false" placeholder="${hasKey ? "saved — paste a new one to replace it" : sharedOn ? "leave empty to use the shared access" : "paste your key"}"${hasKey || sharedOn ? "" : " required"}></label>
-    ${hasKey ? `<p class="gem-small">Saved in this browser: <span class="mono">${esc(masked(getKey()))}</span>. In AI Studio a key starts with AIza or AQ. and has about 39 or 53 characters.</p>` : ""}
+    <label>Site password <span class="gem-small">(or your own Gemini API key)</span><input name="key" type="password" spellcheck="false" autocomplete="off" placeholder="${hasKey ? "your key is saved — paste a new one to replace it" : siteOn ? "site password accepted — leave empty" : sharedOn ? "leave empty to use the shared access" : "the password you were given"}"${hasKey || siteOn || sharedOn ? "" : " required"}></label>
+    ${hasKey ? `<p class="gem-small">Your key, saved in this browser: <span class="mono">${esc(masked(ownKey()))}</span>. In AI Studio a key starts with AIza or AQ. and has about 39 or 53 characters.</p>` : ""}
+    <p class="gem-error" role="alert" hidden></p>
     <label>Model<select name="model">${opts}</select></label>
     <p class="gem-small">Get a key at <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.
-      A key stays in this browser and is sent only to Google's Gemini API. The evidence file goes to Google either way (chip name
+      The site password opens VoltEPIC's key, which the site carries only encrypted; it is shared by all users (about 20
+      requests per model per day). A key stays in this browser and is sent only to Google's Gemini API. The evidence file goes to Google either way (chip name
       included; never the raw curve, the blank curve or the file name). On the free tier Google may use what is sent to improve its
       models, and human reviewers may read it; it allows about 20 requests per model per day.</p>
-    <div class="gem-row"><button class="btn btn-primary btn-sm" type="submit">${hasKey || sharedOn ? "Write the report" : "Save key and write the report"}</button>
-      ${hasKey ? `<button class="btn btn-ghost btn-sm" type="button" data-act="forget">Forget key</button>` : ""}</div>
+    <div class="gem-row"><button class="btn btn-primary btn-sm" type="submit">${hasKey || siteOn || sharedOn ? "Write the report" : "Unlock and write the report"}</button>
+      ${hasKey || siteOn ? `<button class="btn btn-ghost btn-sm" type="button" data-act="forget">${hasKey ? "Forget key" : "Forget password"}</button>` : ""}</div>
   </form>`;
 }
