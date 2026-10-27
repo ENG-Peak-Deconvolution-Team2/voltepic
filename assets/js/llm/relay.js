@@ -10,8 +10,37 @@ export const MODEL = { id: "local-llm", label: "Lab LLM" };
 
 const OFFLINE = "VoltEPIC's report server is offline right now: it runs on the project's lab PC. Try again later.";
 
-/** The server's address ("" = none); a local relay can be tried with localStorage voltepic.relay. */
-export const server = () => { try { return localStorage.getItem("voltepic.relay") || SERVER; } catch { return SERVER; } };
+/** Cloudflare Turnstile sitekey (public); the report server checks each request's token with the secret in relay/.env. */
+const HUMAN = "1x00000000000000000000AA";            // Cloudflare's always-pass test key, until the project's own widget
+const HUMAN_FAIL = "The human check did not pass; reload the page and try again.";
+let loading, human;
+
+/** A fresh Turnstile token for one request (single use, valid 5 min); the widget shows only when it needs the visitor. */
+async function humanToken() {
+  loading ??= new Promise((ok, no) => {
+    const s = Object.assign(document.createElement("script"), { src: "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", async: true });
+    s.onload = ok;
+    s.onerror = () => { loading = null; no(new Error("The human check could not load; check the connection and try again.")); };
+    document.head.append(s);
+  });
+  await loading;
+  return new Promise((resolve, reject) => {
+    if (!human) {
+      const box = Object.assign(document.createElement("div"), { className: "human-check" });
+      document.body.append(box);
+      human = { pending: null };
+      human.id = turnstile.render(box, { sitekey: HUMAN, execution: "execute", appearance: "interaction-only",
+        callback: (token) => human.pending?.resolve(token), "error-callback": () => human.pending?.reject(new Error(HUMAN_FAIL)) });
+    } else turnstile.reset(human.id);
+    human.pending = { resolve, reject };
+    turnstile.execute(human.id);
+  });
+}
+
+/** The server's address ("" = none). A local copy of the site (127.0.0.1, localhost) can try a local relay with
+ *  localStorage voltepic.relay; the published site ignores it, since any page on the same github.io origin could set it. */
+const LOCAL = ["127.0.0.1", "localhost"].includes(location.hostname);
+export const server = () => { try { return (LOCAL && localStorage.getItem("voltepic.relay")) || SERVER; } catch { return SERVER; } };
 
 const explain = (code, message) => (code === 429 ? "Too many reports from this address; wait a minute."
   : message ? `${message}${code >= 500 ? " Try again in a few minutes." : ""}` : OFFLINE);
@@ -22,11 +51,12 @@ const explain = (code, message) => (code === 429 ? "Too many reports from this a
 export async function generate({ kind, kanit, rapor, soru, onceki, signal }) {
   if (!server()) throw new Error(OFFLINE);
   const t0 = performance.now();
+  const insan = await humanToken();
   let res;
   try {
     res = await fetch(`${server()}/generate`, {
       method: "POST", signal, headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "1" },
-      body: JSON.stringify({ kind, kanit, rapor, soru, onceki }),
+      body: JSON.stringify({ kind, kanit, rapor, soru, onceki, insan }),
     });
   } catch (err) {
     if (err.name === "AbortError") throw err;

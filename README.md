@@ -67,10 +67,13 @@ may say is computed first:
 3. **Lab LLM** (`assets/js/llm/relay.js` → `relay/server.mjs`) — the browser sends the evidence file to VoltEPIC's
    report server, a Node script on the project's lab PC, reached through an ngrok tunnel at the address in `SERVER`
    (`relay.js`). The server checks that the request is the analyzer's (origin, evidence-file shape, short texts, 4
-   requests a minute per IP), builds the message with the same `denetim.js` code and the system prompt of
+   requests a minute per IP, a Cloudflare Turnstile token checked with the secret in `relay/.env`, at most 2 lab calls at
+   once), listens only on 127.0.0.1, builds the message with the same `denetim.js` code and the system prompt of
    `data/kimyager_istem.json`, and asks the AI-LAB model (`local-llm`, OpenAI-compatible, lab network only) with
    `reasoning_effort: xhigh`, streamed. No key is in the site; the lab key stays on the PC. While the PC or the tunnel
-   is off, the assistant says the report server is offline. Measured on this report
+   is off, the assistant says the report server is offline; `relay/switch.ps1` turns both on or off. Every page carries a
+   Content-Security-Policy: scripts only from the site and Turnstile, connections only to the site and the tunnel.
+   Measured on this report
    (`literature/xai_llm_rag/kimyager_raporu/yerel_llm_deney_sonuclari_2026-10-22.md`): xhigh 3.3–10.6 min a report;
    on the 7 inputs where Gemini 3.8 Flash made no wrong claim, 3 of 7 reports had one. `worker/` holds the earlier
    Gemini Worker (never deployed); the site no longer calls it.
@@ -159,7 +162,7 @@ tools/export_xai.py        regenerates xai.json; checks that the run's rows and 
 tools/parity.mjs           JS ↔ Python parity test
 tools/export_kimyager.py   regenerates kimyager.json / kimyager_istem.json (+ --fixture: tools/fixtures/kimyager_parity.json)
 tools/kimyager_parity.mjs  chemist report ↔ rapor.py parity test
-relay/server.mjs           the report server on the lab PC (node relay/server.mjs; relay/start.ps1 adds the tunnel)
+relay/server.mjs           the report server on the lab PC (node relay/server.mjs; relay/switch.ps1 turns it and the tunnel on or off)
 ```
 
 No build step: any static server works (`python -m http.server`), and GitHub Pages serves `main`.
