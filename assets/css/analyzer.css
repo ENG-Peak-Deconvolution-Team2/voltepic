@@ -211,7 +211,7 @@
 .as-input input:focus { border-color: var(--ink-2); }
 .as-input .btn { border-radius: 10px; height: 38px; }
 
-/* Chemist report (Gemini) inside the assistant */
+/* Chemist report (Lab LLM) inside the assistant */
 @media (min-width: 641px) { .assistant:has(.msg-report) { width: min(580px, calc(100vw - 24px)); } }
 .msg-report { max-width: 100%; align-self: stretch; display: flex; flex-direction: column; gap: 10px; }
 .llm-status { color: var(--muted); font-size: 12.5px; }
@@ -239,14 +239,6 @@
 .llm-basis { display: flex; flex-wrap: wrap; gap: 6px; }
 .llm-facts pre { margin: 8px 0 4px; max-height: 320px; overflow: auto; white-space: pre-wrap; font-size: 11.5px; color: var(--muted); }
 .blank-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 4px 0 10px; }
-.gem-form { display: flex; flex-direction: column; gap: 10px; }
-.gem-form p { margin: 0; }
-.gem-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink); font-weight: 500; }
-.gem-form input, .gem-form select { height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); font: 13px var(--mono); }
-.gem-form input:focus, .gem-form select:focus { border-color: var(--ink-2); outline: none; }
-.gem-small { color: var(--muted); font-size: 12px; }
-.gem-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.gem-error { color: var(--warning); font-size: 12.5px; }
 
 /* ───────────── Library sheet ───────────── */
 .sheet { width: min(1100px, calc(100vw - 24px)); height: min(820px, calc(100vh - 48px)); padding: 0; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg); overflow: hidden; }

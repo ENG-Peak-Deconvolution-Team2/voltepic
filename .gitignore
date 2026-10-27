@@ -8,3 +8,5 @@ worker/.dev.vars
 worker/node_modules/
 # chemist-report parity fixture: holds unpublished LLM outputs, kept local
 tools/fixtures/kimyager_parity.json
+# the lab model's address for relay/server.mjs, kept on the PC
+relay/.env

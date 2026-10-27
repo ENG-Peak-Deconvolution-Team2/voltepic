@@ -1,13 +1,13 @@
-// Analysis assistant, two modes. Quick: answers composed by rules from the current analysis. Gemini: the chemist report
-// and follow-up questions, written by Gemini from the evidence file of this analysis and checked by code (assets/js/llm/);
-// with the site's key, the visitor's own API key or, when configured, VoltEPIC's shared access.
+// Analysis assistant, two modes. Quick: answers composed by rules from the current analysis. Lab LLM: the chemist report
+// and follow-up questions, written by the lab's model from the evidence file of this analysis and checked by code
+// (assets/js/llm/), through VoltEPIC's report server on the project's lab PC.
 
 import { esc, pct, conc, sleep, reducedMotion, fmtI, download, toast, segmented } from "./ui.js";
-import { getKey, ownKey, setKey, setModel, getModel as getGeminiModel, shared, looksLikeKey, restoreSiteKey } from "./llm/gemini.js";
-import { conversationFor, converse, reportHtml, answerHtml, reportMarkdown, keyFormHtml, label } from "./llm/report.js";
+import { MODEL } from "./llm/relay.js";
+import { conversationFor, converse, reportHtml, answerHtml, reportMarkdown } from "./llm/report.js";
 
 const SUGGESTIONS = [
-  { id: "report", text: "Write a chemist report (Gemini)" },
+  { id: "report", text: "Write a chemist report (Lab LLM)" },
   { id: "detected", text: "Which analytes were detected?" },
   { id: "regions", text: "Which regions influenced the prediction?" },
   { id: "why", text: "Why was this analyte detected?" },
@@ -16,7 +16,7 @@ const SUGGESTIONS = [
 ];
 
 const INTENTS = [
-  { id: "report", re: /report|rapor|gemini|chemist/ },
+  { id: "report", re: /report|rapor|llm|chemist/ },
   { id: "regions", re: /region|where|window|potential|volt|influenc|shade|mask/ },
   { id: "why", re: /\bwhy\b|reason|explain|because/ },
   { id: "confidence", re: /confiden|sure|certain|probab|threshold|reliab|accura|trust/ },
@@ -35,7 +35,7 @@ const remember = { get: () => { try { return localStorage.getItem(MODE); } catch
 /** Build the assistant. `ctx()` returns the live analysis; `actions.explain()` runs occlusion. */
 export function createAssistant({ log, suggest, form, input, ctx, actions, modeSeg, badge }) {
   let busy = false;
-  let mode = remember.get() === "gemini" ? "gemini" : "quick";
+  let mode = remember.get() === "llm" ? "llm" : "quick";
   let conv = null;
 
   function bubble(role, html) {
@@ -67,23 +67,25 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
     mode = m;
     remember.set(m);
     modeSeg?.querySelectorAll("button[data-v]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.v === m)));
-    if (badge) { badge.textContent = m === "gemini" ? "Gemini" : "Scripted"; badge.dataset.tone = m === "gemini" ? "ok" : "warn"; }
-    input.placeholder = m === "gemini" ? "Gemini'ye sor — cevap Türkçe, kanıt dosyasından" : "Ask about this analysis";
-    if (changed && announce) bubble("bot", m === "gemini" ? geminiIntro() : `Quick mode: scripted answers from the numbers of this analysis.`);
+    if (badge) { badge.textContent = m === "llm" ? MODEL.label : "Scripted"; badge.dataset.tone = m === "llm" ? "ok" : "warn"; }
+    input.placeholder = m === "llm" ? "Lab LLM'e sor — cevap Türkçe, kanıt dosyasından" : "Ask about this analysis";
+    if (changed && announce) bubble("bot", m === "llm" ? llmIntro() : `Quick mode: scripted answers from the numbers of this analysis.`);
     renderSuggestions();
   }
 
-  const geminiIntro = () => `Gemini mode: ask for the <b>chemist report</b>, then ask follow-up questions. Answers are in Turkish, built only from `
-    + `this analysis's evidence file (decisions, basis labels, regions against the blank, peak windows), and code checks every text.`;
+  const llmIntro = () => `Lab LLM mode: ask for the <b>chemist report</b>, then ask follow-up questions. Answers are in Turkish, built only from `
+    + `this analysis's evidence file (decisions, basis labels, regions against the blank, peak windows), and code checks every text. `
+    + `A report takes about 3–11 minutes. The evidence file (chip name included; never the raw curve, the blank curve or the file name) `
+    + `goes through an ngrok tunnel to VoltEPIC's report server on the project's lab PC, which asks the AI-LAB model on the lab network.`;
 
   async function ask(question, intent) {
     if (busy || !question.trim()) return;
-    const id = intent || (mode === "quick" ? INTENTS.find((x) => x.re.test(question.toLowerCase()))?.id : REPORT_ASK.test(question) ? "report" : "gemini");
+    const id = intent || (mode === "quick" ? INTENTS.find((x) => x.re.test(question.toLowerCase()))?.id : REPORT_ASK.test(question) ? "report" : "llm");
     busy = true;
     bubble("user", esc(question));
-    if (id === "report" || id === "gemini") {
-      if (mode !== "gemini") setMode("gemini", { announce: false });
-      await geminiTurn(id === "report" ? null : question.trim());
+    if (id === "report" || id === "llm") {
+      if (mode !== "llm") setMode("llm", { announce: false });
+      await llmTurn(id === "report" ? null : question.trim());
       busy = false;
       renderSuggestions();
       return;
@@ -105,88 +107,64 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
     if ((intent === "regions" || intent === "why") && !c.occ) await actions.explain();
     const fn = answers[intent];
     if (fn) return fn(ctx(), question);
-    return `My quick answers are scripted, so they only cover the current result: detections, confidence, influential regions, preprocessing and the measurement. For a written explanation or a free question, switch to <b>Gemini</b> above. Try one of the suggestions below.`;
+    return `My quick answers are scripted, so they only cover the current result: detections, confidence, influential regions, preprocessing and the measurement. For a written explanation or a free question, switch to <b>Lab LLM</b> above. Try one of the suggestions below.`;
   }
 
-  /** One Gemini turn — the report (question null) or an answer — in one bot bubble; asks for a key first if there is no access. */
-  async function geminiTurn(question) {
+  /** One Lab LLM turn — the report (question null) or an answer — in one bot bubble. */
+  async function llmTurn(question) {
     const c = ctx();
     if (!c.result) { bubble("bot", `No analysis yet. Pick a sample from the library or upload a file first.`); return; }
-    await restoreSiteKey();
-    if (!getKey() && !shared()) { keyForm(question); return; }
     let next;
     try { next = await conversationFor(c, conv); } catch (err) { bubble("bot", esc(err.message)); return; }
-    if (conv && next !== conv && conv.turns.length) bubble("bot", `The analysis changed, so Gemini starts a new conversation from its evidence file.`);
+    if (conv && next !== conv && conv.turns.length) bubble("bot", `The analysis changed, so the Lab LLM starts a new conversation from its evidence file.`);
     conv = next;
-    const model = getGeminiModel();
     const doing = question == null ? "is writing the report" : "is answering";
-    const el = bubble("bot msg-report", `<span class="typing"><i></i><i></i><i></i></span> <span class="llm-status">${esc(label(model))} ${doing}…</span>`);
+    const el = bubble("bot msg-report", `<span class="typing"><i></i><i></i><i></i></span> <span class="llm-status">${esc(MODEL.label)} ${doing}…</span>`);
     const t0 = performance.now();
-    const tick = setInterval(() => { const s = el.querySelector(".llm-status"); if (s) s.textContent = `${label(model)} ${doing}… ${((performance.now() - t0) / 1000).toFixed(0)} s`; }, 1000);
+    const tick = setInterval(() => { const s = el.querySelector(".llm-status"); if (s) s.textContent = `${MODEL.label} ${doing}… ${((performance.now() - t0) / 1000).toFixed(0)} s`; }, 1000);
     try {
-      const out = await converse(conv, question, { model });
+      const out = await converse(conv, question);
       el.innerHTML = question == null ? reportHtml(out) : answerHtml(out);
       el.addEventListener("click", (ev) => {
         const act = ev.target.closest("button[data-act]")?.dataset.act;
         if (act === "copy") navigator.clipboard.writeText(out.res.text).then(() => toast("Report copied.", "info"), () => toast("Copy was blocked by the browser.", "error"));
         if (act === "download") download(`voltepic_report_${c.sample.source === "library" ? `s${c.sample.index}` : "upload"}.md`, reportMarkdown(out, `VoltEPIC report — ${c.sample.title ?? c.sample.file ?? "curve"}`), "text/markdown");
-        if (act === "settings") keyForm(null);
       });
     } catch (err) {
-      el.innerHTML = `${esc(err.message)} <button type="button" class="btn btn-ghost btn-sm" data-act="settings">Gemini settings</button>`;
-      el.querySelector("[data-act=settings]").onclick = () => keyForm(question);
+      el.innerHTML = `${esc(err.message)} <button type="button" class="btn btn-ghost btn-sm" data-act="retry">Retry</button>`;
+      el.querySelector("[data-act=retry]").onclick = async (ev) => {
+        if (busy) return;
+        ev.target.disabled = true;
+        busy = true;
+        await llmTurn(question);
+        busy = false;
+        renderSuggestions();
+      };
     } finally {
       clearInterval(tick);
       log.scrollTop = log.scrollHeight;
     }
   }
 
-  /** Key and model form; on submit it runs the pending turn (`pending`: null = report, string = question). */
-  function keyForm(pending) {
-    const el = bubble("bot msg-report", keyFormHtml(!!ownKey()));
-    const form = el.querySelector("form");
-    form.addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      if (busy) return;
-      const k = form.key.value.trim();
-      const err = form.querySelector(".gem-error");
-      if (k && !looksLikeKey(k)) { err.textContent = "That is not a Gemini API key (it starts with AIza… or AQ.…)."; err.hidden = false; form.key.select(); return; }
-      if (k) setKey(k);
-      err.hidden = true;
-      setModel(form.model.value);
-      if (!getKey() && !shared()) { form.key.focus(); return; }
-      form.querySelectorAll("input, select, button").forEach((x) => { x.disabled = true; });
-      busy = true;
-      await geminiTurn(pending);
-      busy = false;
-      renderSuggestions();
-    });
-    form.querySelector("[data-act=forget]")?.addEventListener("click", () => {
-      setKey("");
-      form.querySelectorAll("input, select, button").forEach((x) => { x.disabled = true; });
-      bubble("bot", `The Gemini key was removed from this browser.`);
-    });
-  }
-
-  /** Gemini-mode chips: the report first, then questions shaped by the current result (asked in Turkish). */
-  function geminiSuggestions(c) {
+  /** Lab LLM-mode chips: the report first, then questions shaped by the current result (asked in Turkish). */
+  function llmSuggestions(c) {
     const out = [{ id: "report", text: conv?.turns.some((t) => t.q == null) ? "Raporu yeniden yaz" : "Kimyager raporu yaz" }];
     if (!c.result) return out;
     const top = topAnalyte(c);
     const name = TR_NAME[c.analytes[top].id] ?? c.analytes[top].name;
-    out.push({ id: "gemini", text: `${name} ${c.result.detected[top] ? "VAR" : "YOK"} kararı neye dayanıyor?` });
+    out.push({ id: "llm", text: `${name} ${c.result.detected[top] ? "VAR" : "YOK"} kararı neye dayanıyor?` });
     const near = c.result.probs.findIndex((p, k) => Math.abs(p - c.thresholds[k]) <= 0.3);
-    if (near >= 0) out.push({ id: "gemini", text: `${TR_NAME[c.analytes[near].id]} kararı eşiğe yakın; nasıl okumalıyım?` });
-    out.push({ id: "gemini", text: "Eğrinin ucundaki katkılar ne anlama geliyor?" });
-    out.push({ id: "gemini", text: "Bu açıklamaya ne kadar güvenebilirim?" });
-    out.push({ id: "gemini", text: "Bu sonucu laboratuvarda nasıl doğrularım?" });
+    if (near >= 0) out.push({ id: "llm", text: `${TR_NAME[c.analytes[near].id]} kararı eşiğe yakın; nasıl okumalıyım?` });
+    out.push({ id: "llm", text: "Eğrinin ucundaki katkılar ne anlama geliyor?" });
+    out.push({ id: "llm", text: "Bu açıklamaya ne kadar güvenebilirim?" });
+    out.push({ id: "llm", text: "Bu sonucu laboratuvarda nasıl doğrularım?" });
     return out;
   }
 
   function renderSuggestions() {
     const c = ctx();
     const top = c.result ? topAnalyte(c) : null;
-    const list = mode === "gemini" ? geminiSuggestions(c) : SUGGESTIONS;
+    const list = mode === "llm" ? llmSuggestions(c) : SUGGESTIONS;
     suggest.replaceChildren(...list.map((s) => {
       const b = document.createElement("button");
       b.type = "button";
@@ -210,8 +188,8 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
     reset() {
       log.replaceChildren();
       conv = null;
-      bubble("bot", mode === "gemini" ? geminiIntro()
-        : `Hi — I read the current analysis and answer from its numbers. These quick answers are scripted; switch to <b>Gemini</b> above for the chemist report and free questions.`);
+      bubble("bot", mode === "llm" ? llmIntro()
+        : `Hi — I read the current analysis and answer from its numbers. These quick answers are scripted; switch to <b>Lab LLM</b> above for the chemist report and free questions.`);
       setMode(mode, { announce: false });
     },
     notify(html) { bubble("bot", html); },

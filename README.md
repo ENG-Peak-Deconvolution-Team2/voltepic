@@ -3,7 +3,7 @@
 An analysis site that reads a square-wave voltammogram and decides, for each of four biomarkers —
 ascorbic acid (AA), serotonin (5-HT), estradiol (2E) and melatonin (Mela) — whether it is present,
 and shows why. The detection model runs entirely in the browser; nothing is uploaded anywhere, unless you ask the
-assistant for a Gemini report (below).
+assistant for a chemist report (below).
 
 **Live:** https://eng-peak-deconvolution-team2.github.io/voltepic/
 
@@ -28,7 +28,7 @@ Everywhere: light and dark themes (follows the system, remembers a choice), a co
 (`Ctrl/⌘ K` or `/`) over pages, actions and all 125 curves, responsive down to 390 px.
 
 The **analysis assistant** answers quick questions by rules from the current analysis, and writes a **chemist report
-with Gemini** on request (next section).
+with the lab's language model** on request (next section).
 
 ## Explanations in the analyzer
 
@@ -45,9 +45,9 @@ Chosen from the ENG WP5 XAI run by what landed on the peaks in its tests:
   (01 · Measurement, one or more files, their mean is used), the browser also computes KernelSHAP against it
   (`assets/js/engine/shap.js`, 20 mV, 20,000 coalitions, about 4–6 s) and the blank fill R2 is offered.
 
-## Chemist report (Gemini)
+## Chemist report (Lab LLM)
 
-The assistant has two modes, switched in its header: **Quick** (answers composed by rules) and **Gemini**. In Gemini mode
+The assistant has two modes, switched in its header: **Quick** (answers composed by rules) and **Lab LLM**. In Lab LLM mode
 *Kimyager raporu yaz* turns the current result into a 3–5 sentence report in plain Turkish: what the model said, whether
 its basis is chemically sound, anything suspicious, what to check in the lab. Follow-up questions are answered (1–4
 sentences) from the same evidence file, with the report as context. It is the pipeline of
@@ -64,17 +64,19 @@ may say is computed first:
    notes. Library curves use `data/kimyager.json` (rapor.py's explanations, exported by `tools/export_kimyager.py`);
    uploads need a blank and the coating (01 · Measurement; the coating is read from the chip name when it is a known
    training chip). The file name, the raw curve and the blank curve are not sent.
-3. **Gemini** (`assets/js/llm/gemini.js`) — REST `generateContent` with the system prompt of `data/kimyager_istem.json`,
-   called from the browser with the site's key or a visitor's own. The site's key ships only encrypted
-   (`data/gemini_key.json`: PBKDF2-SHA256, 600,000 iterations → AES-256-GCM, written by `tools/encrypt_key.mjs`); the
-   browser opens it by itself with `SITE_PASS` in `gemini.js`, so visitors enter nothing. It keeps the key out of plain
-   text in the public repository; it is not access control: anyone reading the code can open it. All users share that
-   key's quota (free tier: about 20 requests per model per day; a report takes 1–2). A visitor can paste an own key
-   (Google AI Studio) in Gemini settings instead; it stays in this browser's localStorage and is sent only to Google. The Cloudflare Worker in `worker/` (the key as a server-side secret) is an alternative, not deployed. On the
-   free tier Google may use what is sent to improve its models and human reviewers may read it.
+3. **Lab LLM** (`assets/js/llm/relay.js` → `relay/server.mjs`) — the browser sends the evidence file to VoltEPIC's
+   report server, a Node script on the project's lab PC, reached through an ngrok tunnel at the address in `SERVER`
+   (`relay.js`). The server checks that the request is the analyzer's (origin, evidence-file shape, short texts, 4
+   requests a minute per IP), builds the message with the same `denetim.js` code and the system prompt of
+   `data/kimyager_istem.json`, and asks the AI-LAB model (`local-llm`, OpenAI-compatible, lab network only) with
+   `reasoning_effort: xhigh`, streamed. No key is in the site; the lab key stays on the PC. While the PC or the tunnel
+   is off, the assistant says the report server is offline. Measured on this report
+   (`literature/xai_llm_rag/kimyager_raporu/yerel_llm_deney_sonuclari_2026-10-22.md`): xhigh 3.3–10.6 min a report;
+   on the 7 inputs where Gemini 3.8 Flash made no wrong claim, 3 of 7 reports had one. `worker/` holds the earlier
+   Gemini Worker (never deployed); the site no longer calls it.
 4. **Check** (`assets/js/llm/denetim.js`) — 8 rules on every text: sentence count and length, technical terms, record
    IDs, numbers not in the evidence file, "peak is here" claims, contradicted decisions, scan-edge regions, first person.
-   With findings, Gemini gets one rewrite with them; what is left is listed under the text. The report bubble also shows
+   With findings, the model gets one rewrite with them; what is left is listed under the text. The report bubble also shows
    the basis labels and the full evidence file sent.
 
 ```
@@ -157,7 +159,7 @@ tools/export_xai.py        regenerates xai.json; checks that the run's rows and 
 tools/parity.mjs           JS ↔ Python parity test
 tools/export_kimyager.py   regenerates kimyager.json / kimyager_istem.json (+ --fixture: tools/fixtures/kimyager_parity.json)
 tools/kimyager_parity.mjs  chemist report ↔ rapor.py parity test
-tools/encrypt_key.mjs      writes gemini_key.json (GEMINI_API_KEY=… SITE_PASSWORD=… node tools/encrypt_key.mjs)
+relay/server.mjs           the report server on the lab PC (node relay/server.mjs; relay/start.ps1 adds the tunnel)
 ```
 
 No build step: any static server works (`python -m http.server`), and GitHub Pages serves `main`.

@@ -95,8 +95,8 @@
   <!-- ───────────── Assistant drawer ───────────── -->
   <aside class="assistant" id="assistant" aria-label="Analysis assistant" hidden>
     <header class="as-head">
-      <div><span class="card-title">Assistant</span> <span class="badge" id="asBadge" data-tone="warn" title="Quick: scripted answers from this analysis. Gemini: the chemist report and follow-up questions, written from the evidence file of this analysis and checked by code">Scripted</span></div>
-      <div class="seg sm" id="asMode" role="radiogroup" aria-label="Assistant mode"><button type="button" role="radio" data-v="quick" aria-checked="true">Quick</button><button type="button" role="radio" data-v="gemini" aria-checked="false">Gemini</button></div>
+      <div><span class="card-title">Assistant</span> <span class="badge" id="asBadge" data-tone="warn" title="Quick: scripted answers from this analysis. Lab LLM: the chemist report and follow-up questions, written by the lab's model from the evidence file of this analysis and checked by code">Scripted</span></div>
+      <div class="seg sm" id="asMode" role="radiogroup" aria-label="Assistant mode"><button type="button" role="radio" data-v="quick" aria-checked="true">Quick</button><button type="button" role="radio" data-v="llm" aria-checked="false">Lab LLM</button></div>
       <button class="icon-btn ghost" id="askClose" aria-label="Close the assistant"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </header>
     <div class="as-log" id="chatLog"></div>

@@ -1,27 +1,26 @@
-// Chemist report: evidence file (code) → Gemini → code check; questions are answered from the same file.
+// Chemist report: evidence file (code) → Lab LLM (VoltEPIC's report server, relay.js) → code check; questions are answered
+// from the same file.
 // The pipeline of literature/xai_llm_rag/kimyager_raporu/rapor.py: code assigns each decision's basis label from the XAI
 // tests and builds the evidence file; the LLM writes 3–5 plain Turkish sentences (or a 1–4 sentence answer); code checks
 // the text with 8 rules and asks for one rewrite when it finds something.
 
 import { degerlendir, kanitDosyasi, pyJson, chipOf, IDS } from "./kanit.js";
 import { denetle, mesajRapor, mesajSoru, duzeltme, tekSatir } from "./denetim.js";
-import { generate, generateShared, shared, getKey, ownKey, usingSiteKey, getModel, MODELS } from "./gemini.js";
+import { generate, MODEL } from "./relay.js";
 import { loadJson } from "../data.js";
 import { esc } from "../ui.js";
 
-const MAX_DENEME = 2;        // first text + one rewrite: the Gemini free tier allows 20 requests per model per day
-const masked = (k) => `${k.slice(0, 4)}…${k.slice(-4)} · ${k.length} characters`;
+const MAX_DENEME = 2;        // first text + one rewrite, as in the measured runs (rapor.py --deneme 2)
 const BASIS = { güçlü: "ok", yerinde: "ok", orta: "warn", zayıf: "err", şüpheli: "err", gösterilemedi: "" };
 
 export const getKimyager = () => loadJson("kimyager");
-const getIstem = () => loadJson("kimyager_istem");   // system prompts; a separate small file so the Worker can bundle it
 
 /**
  * The evidence for the analysis on screen. Library curves: rapor.py's own explanation against the blank (data/kimyager.json).
  * Uploads: the browser's explanation against the uploaded blank (c.kim), which needs a blank and the coating.
  */
 async function evidence(c) {
-  const [K, istem] = await Promise.all([getKimyager(), getIstem()]);
+  const K = await getKimyager();
   const s = c.sample;
   let ex, blank, nBlank, kaplama, chip, kaynak;
   if (s.source === "library") {
@@ -36,7 +35,7 @@ async function evidence(c) {
   }
   const kararlar = IDS.map((a) => degerlendir(a, ex, c.thresholds, kaplama, c.xai));
   const kanit = kanitDosyasi({ ex, x: Array.from(s.I), blank, kaplama, chip, nBlank, kararlar, thr: c.thresholds, xai: c.xai, K, kaynak });
-  return { istem, kanit, kararlar, metin: pyJson(kanit) };
+  return { kanit, kararlar, metin: pyJson(kanit) };
 }
 
 /** A conversation about one analysis; `turns` [{ q, a }] (q null = the report). A changed analysis starts a new one. */
@@ -47,9 +46,7 @@ export async function conversationFor(c, previous) {
 }
 
 /** One turn: the report (question null) or an answer, checked; one rewrite with the findings if the check finds something. */
-export async function converse(conv, question, { model = getModel(), signal } = {}) {
-  const key = getKey();
-  if (!key && !shared()) throw new Error("No Gemini key saved.");
+export async function converse(conv, question, { signal } = {}) {
   const rapor = question == null;
   const kanitMetin = rapor ? conv.metin : pyJson({ ...conv.kanit, soru: question });
   const verilen = conv.report ?? "(henüz rapor yazılmadı)";
@@ -59,9 +56,7 @@ export async function converse(conv, question, { model = getModel(), signal } = 
   const onceki = [];
   let res, metin, bulgu, ms = 0, deneme = 0;
   for (deneme = 1; deneme <= MAX_DENEME; deneme++) {
-    res = key
-      ? await generate({ key, model, system: rapor ? conv.istem.rapor : conv.istem.soru, contents: [{ role: "user", parts: [{ text: mesaj }] }], signal })
-      : await generateShared({ model, kind: rapor ? "rapor" : "soru", kanit: conv.kanit, rapor: verilen, soru: question, onceki, signal });
+    res = await generate({ kind: rapor ? "rapor" : "soru", kanit: conv.kanit, rapor: verilen, soru: question, onceki, signal });
     ms += res.ms;
     metin = tekSatir(res.text);
     bulgu = denetle(metin, kanitMetin, ks, nMin, nMax);
@@ -71,14 +66,12 @@ export async function converse(conv, question, { model = getModel(), signal } = 
   }
   if (rapor) conv.report = metin;
   conv.turns.push({ q: question, a: metin });
-  return { conv, question, text: metin, bulgu, deneme, mesaj, model, res: { ...res, text: metin, ms }, via: usingSiteKey() ? "the site's key" : key ? "your key" : "VoltEPIC's shared access" };
+  return { conv, question, text: metin, bulgu, deneme, mesaj, res: { ...res, text: metin, ms } };
 }
-
-export const label = (id) => MODELS.find((m) => m.id === id)?.label ?? id;
 
 const meta = (out) => {
   const n = out.bulgu.length;
-  return `<div class="llm-meta"><span class="badge">${esc(label(out.res.modelVersion))}</span><span class="mono">${(out.res.ms / 1000).toFixed(0)} s</span>`
+  return `<div class="llm-meta"><span class="badge">${esc(MODEL.label)}</span><span class="mono">${(out.res.ms / 1000).toFixed(0)} s</span>`
     + `<span class="badge" data-tone="${n ? "warn" : "ok"}">${n ? `${n} check finding${n > 1 ? "s" : ""}` : "Check passed"}</span>`
     + (out.deneme > 1 ? `<span class="mono">${out.deneme} attempts</span>` : "") + `</div>`;
 };
@@ -101,10 +94,9 @@ export function reportHtml(out) {
     + `${esc(d.kod)} ${d.karar === "VAR" ? "present" : "absent"} · ${esc(d.degerlendirme.dayanak)}</span>`).join("")}</div>`;
   const sent = `<details class="llm-facts"><summary>Evidence file sent to the model (${nRec} records)</summary><pre class="mono" lang="tr">${esc(out.conv.metin)}</pre></details>`;
   const actions = `<div class="llm-actions"><button type="button" class="btn btn-secondary btn-sm" data-act="copy">Copy</button>`
-    + `<button type="button" class="btn btn-secondary btn-sm" data-act="download">Download .md</button>`
-    + `<button type="button" class="btn btn-ghost btn-sm" data-act="settings">Gemini settings</button></div>`;
+    + `<button type="button" class="btn btn-secondary btn-sm" data-act="download">Download .md</button></div>`;
   return `${meta(out)}<div class="llm-body" lang="tr"><p>${esc(out.text)}</p></div>${basis}${findings(out, true)}${sent}${actions}`
-    + `<p class="llm-foot">Written by ${esc(label(out.res.modelVersion))} via ${esc(out.via)} from the evidence file; the basis labels are set by code `
+    + `<p class="llm-foot">Written by the Lab LLM (AI-LAB's model on the lab network, through VoltEPIC's report server) from the evidence file; the basis labels are set by code `
     + `from the XAI tests, not by the model. Research tool output — not for clinical or diagnostic decisions.</p>`;
 }
 
@@ -115,28 +107,4 @@ export function reportMarkdown(out, title) {
     out.text, "", "## Basis labels (code)", "", ...k.kararlar.map((d) => `- ${d.analit}: ${d.karar} · ${d.degerlendirme.dayanak} — ${d.degerlendirme.neden}`), "",
     "## Code check", "", ...(out.bulgu.length ? out.bulgu.map((b) => `- ${b}`) : ["- no findings"]), "",
     "## Evidence file sent to the model", "", "```json", out.conv.metin, "```", ""].join("\n");
-}
-
-/** The key / model form; `hasKey`: the visitor saved a key of their own. */
-export function keyFormHtml(hasKey) {
-  const sharedOn = !!shared(), siteOn = usingSiteKey();
-  const opts = MODELS.map((m) => `<option value="${m.id}"${m.id === getModel() ? " selected" : ""}>${esc(m.label)}</option>`).join("");
-  return `<form class="gem-form" autocomplete="off">
-    <p><b>Chemist report, written by Gemini.</b> The analyzer builds an evidence file from this result: the four decisions, a basis
-      label for each set by code from the XAI tests, the regions both explanations point to (against the blank), where the model
-      generally looks, the expected peak windows and the peaks seen in the curve. Gemini writes 3–5 plain sentences in Turkish and
-      answers follow-up questions from the same file; code checks every text and asks for one rewrite if it finds a problem.</p>
-    ${sharedOn ? `<p class="gem-small">No key needed: without one, reports go through VoltEPIC's shared access (the project's key, a few reports a minute per visitor). With your own key they go straight from your browser to Google.</p>` : ""}
-    <label>Your own Gemini API key${siteOn || sharedOn ? " (optional)" : ""}<input name="key" type="password" spellcheck="false" autocomplete="off" placeholder="${hasKey ? "saved — paste a new one to replace it" : siteOn ? "leave empty to use the site's key" : sharedOn ? "leave empty to use the shared access" : "paste your key"}"${hasKey || siteOn || sharedOn ? "" : " required"}></label>
-    ${hasKey ? `<p class="gem-small">Your key, saved in this browser: <span class="mono">${esc(masked(ownKey()))}</span>. In AI Studio a key starts with AIza or AQ. and has about 39 or 53 characters.</p>` : ""}
-    <p class="gem-error" role="alert" hidden></p>
-    <label>Model<select name="model">${opts}</select></label>
-    <p class="gem-small">Get a key at <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.
-      Without a key of your own, VoltEPIC's key is used (carried encrypted in the site); all users share it, about 20
-      requests per model per day. A key stays in this browser and is sent only to Google's Gemini API. The evidence file goes to Google either way (chip name
-      included; never the raw curve, the blank curve or the file name). On the free tier Google may use what is sent to improve its
-      models, and human reviewers may read it; it allows about 20 requests per model per day.</p>
-    <div class="gem-row"><button class="btn btn-primary btn-sm" type="submit">${hasKey || siteOn || sharedOn ? "Write the report" : "Save key and write the report"}</button>
-      ${hasKey ? `<button class="btn btn-ghost btn-sm" type="button" data-act="forget">Forget key</button>` : ""}</div>
-  </form>`;
 }
