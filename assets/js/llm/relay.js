@@ -2,7 +2,7 @@
 // from the evidence file with the same code and prompts as the site (denetim.js, data/kimyager_istem.json) and asks the
 // AI-LAB model on the lab network. While the PC or the tunnel is off, the report is not available.
 
-const SERVER = "https://camper-envision-quill.ngrok-free.dev";   // the tunnel's fixed address (ngrok dev domain)
+const SERVER = "";                                   // the tunnel's address; "" = the report server is off (ngrok dev domain was https://camper-envision-quill.ngrok-free.dev)
 
 /** Measured on this report at xhigh (literature/xai_llm_rag/kimyager_raporu/yerel_llm_deney_sonuclari_2026-10-22.md):
  *  3.3–10.6 min a report, 3 of 7 reports with a wrong claim on the inputs where Gemini 3.8 Flash had 0. */
