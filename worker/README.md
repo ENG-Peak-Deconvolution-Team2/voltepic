@@ -12,7 +12,7 @@ browser ── GET /jobs/:id ─▶ mailbox ◀── POST /pc/done/:id ─┘
 What it checks:
 
 - **Visitors**: only `https://eng-peak-deconvolution-team2.github.io` (and `127.0.0.1:8765` / `localhost:8765` for
-  local testing); only the analyzer's chemist-report evidence file (version `kimyager_raporu…`, four decisions, four
+  local testing); only the analyzer's chemist-report evidence file (version `chemist_report…`, four decisions, four
   analyte branches; a question ≤ 600 characters, the report given ≤ 4,000, at most 2 earlier attempts), ≤ 80 KB; a
   Cloudflare Turnstile token checked with `TURNSTILE_SECRET`; 4 requests a minute per IP (`CF-Connecting-IP`); at most
   6 requests waiting. Origin can be forged outside a browser; the token and the limits carry the weight.

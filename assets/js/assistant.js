@@ -27,8 +27,7 @@ const INTENTS = [
   { id: "hello", re: /^(hi|hello|hey|merhaba|selam)\b/ },
 ];
 
-const TR_NAME = { AA: "Askorbik asit", "5HT": "Serotonin", "2E": "Estradiol", Mela: "Melatonin" };
-const REPORT_ASK = /^\s*(kimyager\s+)?rapor(u)?\s+yaz|^\s*write\s+(a\s+)?(chemist\s+)?report/i;
+const REPORT_ASK = /^\s*(kimyager\s+)?rapor(u)?\s+(yeniden\s+)?yaz|^\s*(re)?write\s+(a\s+|the\s+)?(chemist\s+)?report/i;
 const MODE = "voltepic.assistant.mode";
 const remember = { get: () => { try { return localStorage.getItem(MODE); } catch { return null; } }, set: (v) => { try { localStorage.setItem(MODE, v); } catch { /* per page */ } } };
 
@@ -68,12 +67,12 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
     remember.set(m);
     modeSeg?.querySelectorAll("button[data-v]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.v === m)));
     if (badge) { badge.textContent = m === "llm" ? MODEL.label : "Scripted"; badge.dataset.tone = m === "llm" ? "ok" : "warn"; }
-    input.placeholder = m === "llm" ? "Lab LLM'e sor — cevap Türkçe, kanıt dosyasından" : "Ask about this analysis";
+    input.placeholder = m === "llm" ? "Ask the Lab LLM — answers from the evidence file" : "Ask about this analysis";
     if (changed && announce) bubble("bot", m === "llm" ? llmIntro() : `Quick mode: scripted answers from the numbers of this analysis.`);
     renderSuggestions();
   }
 
-  const llmIntro = () => `Lab LLM mode: ask for the <b>chemist report</b>, then ask follow-up questions. Answers are in Turkish, built only from `
+  const llmIntro = () => `Lab LLM mode: ask for the <b>chemist report</b>, then ask follow-up questions. Answers are built only from `
     + `this analysis's evidence file (decisions, basis labels, regions against the blank, peak windows), and code checks every text. `
     + `A report takes about 3–11 minutes. The evidence file (chip name included; never the raw curve, the blank curve or the file name) `
     + `waits in VoltEPIC's mailbox on Cloudflare until the report server on the project's lab PC collects it and asks the AI-LAB `
@@ -148,18 +147,17 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
     }
   }
 
-  /** Lab LLM-mode chips: the report first, then questions shaped by the current result (asked in Turkish). */
+  /** Lab LLM-mode chips: the report first, then questions shaped by the current result. */
   function llmSuggestions(c) {
     const out = [{ id: "report", text: conv?.turns.some((t) => t.q == null) ? "Rewrite the report" : "Write the chemist report" }];
     if (!c.result) return out;
     const top = topAnalyte(c);
-    const name = TR_NAME[c.analytes[top].id] ?? c.analytes[top].name;
-    out.push({ id: "llm", text: `${name} ${c.result.detected[top] ? "VAR" : "YOK"} kararı neye dayanıyor?` });
+    out.push({ id: "llm", text: `What is the ${c.analytes[top].name.toLowerCase()} ${c.result.detected[top] ? "PRESENT" : "ABSENT"} decision based on?` });
     const near = c.result.probs.findIndex((p, k) => Math.abs(p - c.thresholds[k]) <= 0.3);
-    if (near >= 0) out.push({ id: "llm", text: `${TR_NAME[c.analytes[near].id]} kararı eşiğe yakın; nasıl okumalıyım?` });
-    out.push({ id: "llm", text: "Eğrinin ucundaki katkılar ne anlama geliyor?" });
-    out.push({ id: "llm", text: "Bu açıklamaya ne kadar güvenebilirim?" });
-    out.push({ id: "llm", text: "Bu sonucu laboratuvarda nasıl doğrularım?" });
+    if (near >= 0) out.push({ id: "llm", text: `The ${c.analytes[near].name.toLowerCase()} decision is borderline; how should I read it?` });
+    out.push({ id: "llm", text: "What do the contributions at the ends of the curve mean?" });
+    out.push({ id: "llm", text: "How far can I trust this explanation?" });
+    out.push({ id: "llm", text: "How can I verify this result in the lab?" });
     return out;
   }
 

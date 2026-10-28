@@ -30,8 +30,8 @@ const str = (x, max) => typeof x === "string" && x.trim().length > 0 && x.length
 function invalid(b) {
   const k = b?.kanit;
   if (!["rapor", "soru"].includes(b?.kind)) return "kind";
-  if (!k || typeof k !== "object" || !String(k.kanit_dosyasi_surumu ?? "").startsWith("kimyager_raporu")) return "evidence file";
-  if (!Array.isArray(k.kararlar) || k.kararlar.length !== 4 || Object.keys(k.analitler ?? {}).length !== 4) return "decisions";
+  if (!k || typeof k !== "object" || !String(k.evidence_file_version ?? "").startsWith("chemist_report")) return "evidence file";
+  if (!Array.isArray(k.decisions) || k.decisions.length !== 4 || Object.keys(k.analytes ?? {}).length !== 4) return "decisions";
   if (b.kind === "soru" && (!str(b.soru, MAX_Q) || !str(b.rapor, MAX_TEXT))) return "question";
   if (!Array.isArray(b.onceki ?? []) || (b.onceki ?? []).length > MAX_ONCEKI) return "attempts";
   if ((b.onceki ?? []).some((o) => !str(o?.metin, MAX_TEXT) || !Array.isArray(o.bulgu) || o.bulgu.some((x) => !str(x, 300)))) return "attempt shape";

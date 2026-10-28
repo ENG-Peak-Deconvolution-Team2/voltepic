@@ -48,28 +48,31 @@ Chosen from the ENG WP5 XAI run by what landed on the peaks in its tests:
 ## Chemist report (Lab LLM)
 
 The assistant has two modes, switched in its header: **Quick** (answers composed by rules) and **Lab LLM**. In Lab LLM mode
-*Kimyager raporu yaz* turns the current result into a 3–5 sentence report in plain Turkish: what the model said, whether
-its basis is chemically sound, anything suspicious, what to check in the lab. Follow-up questions are answered (1–4
-sentences) from the same evidence file, with the report as context. It is the pipeline of
-`literature/xai_llm_rag/kimyager_raporu/rapor.py`, ported to the browser; the language model only writes, everything it
-may say is computed first:
+*Write the chemist report* turns the current result into a 3–5 sentence report in plain English: what the model said,
+whether its basis is chemically sound, anything suspicious, what to check in the lab. Follow-up questions are answered
+(1–4 sentences) from the same evidence file, with the report as context. It is the pipeline of
+`literature/xai_llm_rag/kimyager_raporu/rapor.py`, ported to the browser and to English; the language model only writes,
+everything it may say is computed first:
 
 1. **Basis labels** (`assets/js/llm/kanit.js`, `degerlendir`) — code sets one label per decision from the XAI tests
-   (`güçlü`, `orta`, `zayıf`, `şüpheli`, `yerinde`, `gösterilemedi`): do SHAP and occlusion against the blank point to the
-   same 20 mV slice, does it fall in the analyte's peak window and among the model's PFI top 3, is it a scan edge, is the
-   decision near the threshold, does the blank itself get the same decision. The model never sets a label.
-2. **Evidence file** (`kanitDosyasi`) — about 93 records in six branches: the decisions with their labels and reasons, the
-   regions both explanations point to toward and against each decision (top 3 and top 2 slices), where the model
-   generally looks (PFI, SAGE), the expected peak windows, the peaks seen in the curve, check suggestions and general
-   notes. Library curves use `data/kimyager.json` (rapor.py's explanations, exported by `tools/export_kimyager.py`);
-   uploads need a blank and the coating (01 · Measurement; the coating is read from the chip name when it is a known
-   training chip). The file name, the raw curve and the blank curve are not sent.
+   (strong, moderate, weak, suspect, sound, not shown; `güçlü` … `gösterilemedi` in rapor.py): do SHAP and occlusion
+   against the blank point to the same 20 mV slice, does it fall in the analyte's peak window and among the model's PFI
+   top 3, is it a scan edge, is the decision near the threshold, does the blank itself get the same decision. The model
+   never sets a label.
+2. **Evidence file** (`kanitDosyasi`, then `assets/js/llm/evidence_en.js`) — about 93 records in six branches: the
+   decisions with their labels and reasons, the regions both explanations point to toward and against each decision (top
+   3 and top 2 slices), where the model generally looks (PFI, SAGE), the expected peak windows, the peaks seen in the
+   curve, check suggestions and general notes. It is computed in Turkish exactly as rapor.py does, then translated rule by
+   rule: every text in it comes from a fixed set of templates, and a key or text without a rule stops the report instead
+   of reaching the model in Turkish. Library curves use `data/kimyager.json` (rapor.py's explanations, exported by
+   `tools/export_kimyager.py`); uploads need a blank and the coating (01 · Measurement; the coating is read from the chip
+   name when it is a known training chip). The file name, the raw curve and the blank curve are not sent.
 3. **Lab LLM** (`assets/js/llm/relay.js` → `worker/` → `relay/server.mjs`) — the browser leaves the evidence file in
    VoltEPIC's mailbox, a Cloudflare Worker at the address in `SERVER` (`relay.js`), and asks for the answer every 3 s.
    The mailbox checks that the request is the analyzer's (origin, evidence-file shape, short texts, a Cloudflare Turnstile
    token, 4 requests a minute per IP, at most 6 waiting) and keeps it in a Durable Object. The report server, a Node
    script on the project's lab PC, collects requests over outbound HTTPS with a secret (`PC_SECRET`), at most 2 at once;
-   it builds the message with the same `denetim.js` code and the system prompt of `data/kimyager_istem.json`, asks the
+   it builds the message with the same `check.js` code and the system prompt of `data/chemist_prompts.json`, asks the
    AI-LAB model (`local-llm`, OpenAI-compatible, lab network only) with `reasoning_effort: xhigh`, streamed, and leaves
    the answer in the mailbox. Nothing connects to the PC: no port is opened and no tunnel runs. No key is in the site;
    the lab key stays on the PC. While the PC is off, the mailbox tells the site the report server is offline;
@@ -77,17 +80,23 @@ may say is computed first:
    Every page carries a Content-Security-Policy: scripts only from the site and Turnstile, connections only to the site
    and the mailbox. Measured on this report
    (`literature/xai_llm_rag/kimyager_raporu/yerel_llm_deney_sonuclari_2026-10-22.md`): xhigh 3.3–10.6 min a report;
-   on the 7 inputs where Gemini 3.8 Flash made no wrong claim, 3 of 7 reports had one.
-4. **Check** (`assets/js/llm/denetim.js`) — 8 rules on every text: sentence count and length, technical terms, record
-   IDs, numbers not in the evidence file, "peak is here" claims, contradicted decisions, scan-edge regions, first person.
-   With findings, the model gets one rewrite with them; what is left is listed under the text. The report bubble also shows
-   the basis labels and the full evidence file sent.
+   on the 7 inputs where Gemini 3.8 Flash made no wrong claim, 3 of 7 Turkish outputs had one. In English
+   (`…/ingilizce_deney_sonuclari_2026-10-28.md`, the same 7 inputs, read by one non-blind reader): 7/7 passed the check
+   on the first attempt, 1 of 7 had a wrong claim (a decision tied to one method's second slice), reports 2.5–5.5 min.
+4. **Check** (`assets/js/llm/check.js`) — the 8 rules of rapor.py's check (`denetim.js`, Turkish), written for English:
+   sentence count and length, technical terms, record IDs, numbers not in the evidence file, "peak is here" claims,
+   contradicted decisions, scan-edge regions, first person. With findings, the model gets one rewrite with them; what is
+   left is listed under the text. The report bubble also shows the basis labels and the full evidence file sent.
 
 ```
+node tools/evidence_en_check.mjs     every Turkish evidence file at hand translates, keeps its numbers, leaves no Turkish
+node tools/check_en_test.mjs         each English check rule on a text written to trip it, and a clean report
 node tools/kimyager_parity.mjs [--shap]
 ```
 
-compares the evidence file, the labels, the check and the messages with rapor.py. Its fixture
+Last run of the first two (2026-10-28): 130/130 evidence files (125 library curves + the five 2026-10-21 examples)
+translated with identical numbers and no Turkish left; 13/13 check cases. The third compares the Turkish evidence file,
+the labels, the check and the messages with rapor.py. Its fixture
 (`tools/fixtures/kimyager_parity.json`, written by `export_kimyager.py --fixture`) holds unpublished LLM outputs and is
 not part of this repository. Last run (2026-10-21): evidence file identical JSON text on 125/125 library curves, basis
 labels 125/125, check findings identical on 170/170 texts (the runs' real reports and altered copies), report and question
@@ -149,19 +158,23 @@ assets/js/app/             analyzer: main.js (state, run, instrument), report.js
 assets/js/pages/           one module per page
 assets/js/io.js            CSV / CHI parsing and resampling
 assets/js/assistant.js     assistant: scripted answers + the Gemini report
-assets/js/llm/             chemist report: kanit (labels, evidence file), denetim (check, messages), gemini, report
+assets/js/llm/             chemist report: kanit (labels, evidence file, Turkish as rapor.py), evidence_en (English evidence file),
+                           check (English check, messages), denetim (rapor.py's Turkish check), relay (mailbox), report
 worker/                    Cloudflare Worker: the mailbox between the site and the lab PC (README there)
 assets/js/engine/          wavelet transform, model, occlusion, KernelSHAP (shap.js)
 data/model.json            exported model
 data/library.json          held-out curves, metadata, mean blanks, Python reference scores
 data/xai.json              XAI run results for this model: per-curve SHAP (R2), PFI, E3 windows, test numbers
 data/kimyager.json         chemist report: per library curve SHAP / occlusion against the blank, the blank, model-level notes
-data/kimyager_istem.json   chemist report system prompts (report, question)
+data/chemist_prompts.json  chemist report system prompts in English (report, question), used by the report server
+data/kimyager_istem.json   rapor.py's Turkish system prompts (report, question), for the parity test
 tools/export_model.py      regenerates model.json / library.json from the research workspace
 tools/export_xai.py        regenerates xai.json; checks that the run's rows and model are the site's
 tools/parity.mjs           JS ↔ Python parity test
 tools/export_kimyager.py   regenerates kimyager.json / kimyager_istem.json (+ --fixture: tools/fixtures/kimyager_parity.json)
 tools/kimyager_parity.mjs  chemist report ↔ rapor.py parity test
+tools/evidence_en_check.mjs  English evidence file: every Turkish file translates, same numbers, no Turkish left
+tools/check_en_test.mjs    English check: each rule on a text written to trip it
 relay/server.mjs           the report server on the lab PC: collects requests from the mailbox (relay/switch.ps1 turns it on or off)
 ```
 

@@ -2,8 +2,8 @@
 // model, which is reachable only from the lab network. It collects the requests from the site's mailbox (worker/, a
 // Cloudflare Worker) over outbound HTTPS and leaves the answers there: nothing connects to this PC, no port is opened and
 // no tunnel runs. The mailbox has already checked each request (origin, evidence-file shape, Turnstile, rate); this
-// server builds the message itself with the same code and prompts as the site (assets/js/llm/denetim.js +
-// data/kimyager_istem.json). The lab call is streamed and its effort is xhigh, as measured in
+// server builds the message itself with the same code and prompts as the site (assets/js/llm/check.js +
+// data/chemist_prompts.json, English). The lab call is streamed and its effort is xhigh, as measured in
 // literature/xai_llm_rag/kimyager_raporu/yerel_llm_deney_sonuclari_2026-10-22.md (report 3.3–10.6 min; the lab proxy cuts
 // unstreamed calls at ~300 s). relay/switch.ps1 turns it on or off.
 //   node relay/server.mjs            (key: LOCAL_LLM_CLIENT_KEY, else read from ~/.omp/agent/.env;
@@ -15,7 +15,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pyJson } from "../assets/js/llm/kanit.js";
-import { mesajRapor, mesajSoru, duzeltme } from "../assets/js/llm/denetim.js";
+import { reportMessage, questionMessage, retryNote } from "../assets/js/llm/check.js";
 
 try { process.loadEnvFile(join(import.meta.dirname, ".env")); } catch {}
 const need = (name) => process.env[name] || (console.error(`No ${name} (environment or relay/.env).`), process.exit(1));
@@ -24,7 +24,7 @@ const MODEL = "local-llm", EFFORT = process.env.LAB_LLM_EFFORT ?? "xhigh";
 const BUSY = 2;                                     // lab calls at once (the mailbox holds the same limit)
 const POLL = 3000, BEAT = 15000, TIMEOUT = 1800000; // ask for work; report progress; whole stream, as rapor.py
 
-const istem = JSON.parse(readFileSync(new URL("../data/kimyager_istem.json", import.meta.url), "utf8"));
+const istem = JSON.parse(readFileSync(new URL("../data/chemist_prompts.json", import.meta.url), "utf8"));
 const envKey = () => {
   try {
     const line = readFileSync(join(homedir(), ".omp", "agent", ".env"), "utf8").split(/\r?\n/).find((l) => l.startsWith("LOCAL_LLM_CLIENT_KEY="));
@@ -88,11 +88,11 @@ async function run(job) {
   try {
     let mesaj;
     try {                                           // a crafted file (e.g. nested 20,000 deep) must not stop the server
-      const kanit = pyJson(rapor ? { ...job.kanit, soru: null } : { ...job.kanit, soru: job.soru });
-      mesaj = rapor ? mesajRapor(kanit) : mesajSoru(kanit, job.rapor, job.soru);
-      for (const o of job.onceki ?? []) mesaj += duzeltme(o.metin, o.bulgu, rapor ? 5 : 4);
+      const kanit = pyJson(rapor ? { ...job.kanit, question: null } : { ...job.kanit, question: job.soru });
+      mesaj = rapor ? reportMessage(kanit) : questionMessage(kanit, job.rapor, job.soru);
+      for (const o of job.onceki ?? []) mesaj += retryNote(o.metin, o.bulgu, rapor ? 5 : 4);
     } catch { throw Object.assign(new Error("Not an analyzer request (evidence file)."), { status: 400 }); }
-    payload = await ask(rapor ? istem.rapor : istem.soru, mesaj, AbortSignal.any([left.signal, AbortSignal.timeout(TIMEOUT)]));
+    payload = await ask(rapor ? istem.report : istem.question, mesaj, AbortSignal.any([left.signal, AbortSignal.timeout(TIMEOUT)]));
     if (!payload.text) payload = { error: { code: 502, message: `The lab model returned no text (finish reason: ${payload.finishReason ?? "unknown"}). Try again in a few minutes.` } };
   } catch (err) {
     const message = left.signal.aborted ? "The visitor left before the answer."

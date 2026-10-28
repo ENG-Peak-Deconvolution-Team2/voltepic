@@ -7,13 +7,16 @@ const SERVER = "https://voltepic-relay.voltepic.workers.dev";   // the mailbox's
 const POLL = 3000;                                   // the site asks for its answer every 3 s; the mailbox drops a request unasked for 60 s
 
 /** Measured on this report at xhigh (literature/xai_llm_rag/kimyager_raporu/yerel_llm_deney_sonuclari_2026-10-22.md):
- *  3.3–10.6 min a report, 3 of 7 reports with a wrong claim on the inputs where Gemini 3.8 Flash had 0. */
+ *  3.3–10.6 min a report, 3 of 7 Turkish outputs with a wrong claim on the inputs where Gemini 3.8 Flash had 0; in English
+ *  (ingilizce_deney_sonuclari_2026-10-28.md, same inputs, one non-blind reader) 1 of 7, reports 2.5–5.5 min. */
 export const MODEL = { id: "local-llm", label: "Lab LLM" };
 
 const OFFLINE = "VoltEPIC's report server is offline right now: it runs on the project's lab PC. Try again later.";
 
 /** Cloudflare Turnstile sitekey (public); the mailbox checks each request's token with its secret (TURNSTILE_SECRET). */
-const HUMAN = "0x4AAAAAAFpP1E7RG9x7e0iv";            // widget "VoltEPIC", managed, eng-peak-deconvolution-team2.github.io
+const LOCAL = ["127.0.0.1", "localhost"].includes(location.hostname);
+const HUMAN = LOCAL ? "1x00000000000000000000AA"     // a local copy: Cloudflare's always-pass test key (the local mailbox's .dev.vars matches)
+  : "0x4AAAAAAFpP1E7RG9x7e0iv";                       // widget "VoltEPIC", managed, eng-peak-deconvolution-team2.github.io
 const HUMAN_FAIL = "The human check did not pass; reload the page and try again.";
 let loading, human;
 
@@ -42,7 +45,6 @@ async function humanToken() {
 
 /** The mailbox's address ("" = none). A local copy of the site (127.0.0.1, localhost) can try a local mailbox with
  *  localStorage voltepic.relay; the published site ignores it, since any page on the same github.io origin could set it. */
-const LOCAL = ["127.0.0.1", "localhost"].includes(location.hostname);
 export const server = () => { try { return (LOCAL && localStorage.getItem("voltepic.relay")) || SERVER; } catch { return SERVER; } };
 
 const wait = (ms, signal) => new Promise((ok, no) => {
