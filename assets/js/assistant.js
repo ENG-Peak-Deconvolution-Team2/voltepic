@@ -150,7 +150,7 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
 
   /** Lab LLM-mode chips: the report first, then questions shaped by the current result (asked in Turkish). */
   function llmSuggestions(c) {
-    const out = [{ id: "report", text: conv?.turns.some((t) => t.q == null) ? "Raporu yeniden yaz" : "Kimyager raporu yaz" }];
+    const out = [{ id: "report", text: conv?.turns.some((t) => t.q == null) ? "Rewrite the report" : "Write the chemist report" }];
     if (!c.result) return out;
     const top = topAnalyte(c);
     const name = TR_NAME[c.analytes[top].id] ?? c.analytes[top].name;
