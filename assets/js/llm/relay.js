@@ -32,7 +32,8 @@ async function humanToken() {
       document.body.append(box);
       human = { pending: null };
       human.id = turnstile.render(box, { sitekey: HUMAN, execution: "execute", appearance: "interaction-only",
-        callback: (token) => human.pending?.resolve(token), "error-callback": () => human.pending?.reject(new Error(HUMAN_FAIL)) });
+        callback: (token) => human.pending?.resolve(token), "error-callback": () => human.pending?.reject(new Error(HUMAN_FAIL)),
+        "timeout-callback": () => human.pending?.reject(new Error("The human check was not completed; click Retry and tick the box.")) });
     } else turnstile.reset(human.id);
     human.pending = { resolve, reject };
     turnstile.execute(human.id);
