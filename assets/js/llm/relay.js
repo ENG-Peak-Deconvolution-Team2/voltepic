@@ -1,8 +1,10 @@
-// VoltEPIC's report server: relay/server.mjs on the project's lab PC, reached through an ngrok tunnel. It builds the message
-// from the evidence file with the same code and prompts as the site (denetim.js, data/kimyager_istem.json) and asks the
-// AI-LAB model on the lab network. While the PC or the tunnel is off, the report is not available.
+// VoltEPIC's report server: the site leaves each request in VoltEPIC's mailbox (worker/, a Cloudflare Worker); the project's
+// lab PC (relay/server.mjs) collects it over outbound HTTPS, builds the message from the evidence file with the same code
+// and prompts as the site (denetim.js, data/kimyager_istem.json), asks the AI-LAB model on the lab network and leaves the
+// answer, which the site picks up. While the PC is off, the mailbox says so and the report is not available.
 
-const SERVER = "";                                   // the tunnel's address; "" = the report server is off (ngrok dev domain was https://camper-envision-quill.ngrok-free.dev)
+const SERVER = "https://voltepic-relay.voltepic.workers.dev";   // the mailbox's address; "" = off
+const POLL = 3000;                                   // the site asks for its answer every 3 s; the mailbox drops a request unasked for 60 s
 
 /** Measured on this report at xhigh (literature/xai_llm_rag/kimyager_raporu/yerel_llm_deney_sonuclari_2026-10-22.md):
  *  3.3–10.6 min a report, 3 of 7 reports with a wrong claim on the inputs where Gemini 3.8 Flash had 0. */
@@ -10,8 +12,8 @@ export const MODEL = { id: "local-llm", label: "Lab LLM" };
 
 const OFFLINE = "VoltEPIC's report server is offline right now: it runs on the project's lab PC. Try again later.";
 
-/** Cloudflare Turnstile sitekey (public); the report server checks each request's token with the secret in relay/.env. */
-const HUMAN = "1x00000000000000000000AA";            // Cloudflare's always-pass test key, until the project's own widget
+/** Cloudflare Turnstile sitekey (public); the mailbox checks each request's token with its secret (TURNSTILE_SECRET). */
+const HUMAN = "0x4AAAAAAFpP1E7RG9x7e0iv";            // widget "VoltEPIC", managed, eng-peak-deconvolution-team2.github.io
 const HUMAN_FAIL = "The human check did not pass; reload the page and try again.";
 let loading, human;
 
@@ -37,33 +39,50 @@ async function humanToken() {
   });
 }
 
-/** The server's address ("" = none). A local copy of the site (127.0.0.1, localhost) can try a local relay with
+/** The mailbox's address ("" = none). A local copy of the site (127.0.0.1, localhost) can try a local mailbox with
  *  localStorage voltepic.relay; the published site ignores it, since any page on the same github.io origin could set it. */
 const LOCAL = ["127.0.0.1", "localhost"].includes(location.hostname);
 export const server = () => { try { return (LOCAL && localStorage.getItem("voltepic.relay")) || SERVER; } catch { return SERVER; } };
 
-const explain = (code, message) => (code === 429 ? "Too many reports from this address; wait a minute."
-  : message ? `${message}${code >= 500 ? " Try again in a few minutes." : ""}` : OFFLINE);
+const wait = (ms, signal) => new Promise((ok, no) => {
+  const t = setTimeout(ok, ms);
+  signal?.addEventListener("abort", () => { clearTimeout(t); no(signal.reason); }, { once: true });
+});
 
-/** One call: the server builds the message from the evidence file ("rapor" or "soru"), the report given, the question and the
- *  earlier attempts' check findings → { text, finishReason, modelVersion, usage, ms }. Errors after the server has started
- *  answering come in the JSON body, since the status is sent before the model's text. */
+/** One call to the mailbox → its JSON; its error message (complete, with what to do) or OFFLINE when it cannot be reached. */
+async function call(path, init, signal) {
+  let res;
+  try { res = await fetch(`${server()}${path}`, { ...init, signal }); } catch (err) {
+    if (err.name === "AbortError") throw err;
+    throw Object.assign(new Error(OFFLINE), { net: true });
+  }
+  const body = await res.json().catch(() => ({}));
+  if (body.error || !res.ok) throw new Error(body.error?.message || OFFLINE);
+  return body;
+}
+
+/** One call: the lab PC builds the message from the evidence file ("rapor" or "soru"), the report given, the question and
+ *  the earlier attempts' check findings → { text, finishReason, modelVersion, usage, ms }. The request waits in the
+ *  mailbox until the PC collects it; the site asks for the answer every 3 s, and leaving the page withdraws it. */
 export async function generate({ kind, kanit, rapor, soru, onceki, signal }) {
   if (!server()) throw new Error(OFFLINE);
   const t0 = performance.now();
   const insan = await humanToken();
-  let res;
+  const { id } = await call("/jobs", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, kanit, rapor, soru, onceki, insan }) }, signal);
   try {
-    res = await fetch(`${server()}/generate`, {
-      method: "POST", signal, headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "1" },
-      body: JSON.stringify({ kind, kanit, rapor, soru, onceki, insan }),
-    });
+    for (let misses = 0; ;) {
+      await wait(POLL, signal);
+      let j;
+      try { j = await call(`/jobs/${id}`, {}, signal); misses = 0; } catch (err) {
+        if (err.net && ++misses <= 5) continue;     // a dropped connection is retried for ~15 s
+        throw err;
+      }
+      if (j.status === "done") return { text: j.text, finishReason: j.finishReason, modelVersion: j.model ?? MODEL.id, usage: j.usage ?? {}, ms: performance.now() - t0 };
+      if (j.status === "error") throw new Error(j.error?.message || OFFLINE);
+    }
   } catch (err) {
-    if (err.name === "AbortError") throw err;
-    throw new Error(OFFLINE);
+    if (err.name === "AbortError") fetch(`${server()}/jobs/${id}`, { method: "DELETE", keepalive: true }).catch(() => {});
+    throw err;
   }
-  const body = await res.json().catch(() => ({}));
-  const error = body.error ?? (res.ok && body.text ? null : { code: res.status });
-  if (error) throw new Error(explain(error.code, error.message));
-  return { text: body.text, finishReason: body.finishReason, modelVersion: body.model ?? MODEL.id, usage: body.usage ?? {}, ms: performance.now() - t0 };
 }

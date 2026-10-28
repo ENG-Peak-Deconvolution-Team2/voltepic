@@ -1,34 +1,28 @@
 // VoltEPIC's report server: runs on the project's lab PC and answers the site's chemist-report requests with the AI-LAB
-// model, which is reachable only from the lab network. The site reaches it through an ngrok tunnel (relay/switch.ps1).
-// Like worker/ it is not a general relay: it accepts only the analyzer's evidence file (the chemist report: "rapor"; a
-// follow-up question: "soru"), builds the message itself with the same code and prompts as the site
-// (assets/js/llm/denetim.js + data/kimyager_istem.json), and answers only the site's origin, a few times a minute per IP.
-// The lab call is streamed and its effort is xhigh, as measured in literature/xai_llm_rag/kimyager_raporu/
-// yerel_llm_deney_sonuclari_2026-10-22.md (report 3.3–10.6 min; the lab proxy cuts unstreamed calls at ~300 s). The answer
-// to the browser starts at once and carries a space every 15 s until the JSON, so no browser or tunnel waits on silence.
+// model, which is reachable only from the lab network. It collects the requests from the site's mailbox (worker/, a
+// Cloudflare Worker) over outbound HTTPS and leaves the answers there: nothing connects to this PC, no port is opened and
+// no tunnel runs. The mailbox has already checked each request (origin, evidence-file shape, Turnstile, rate); this
+// server builds the message itself with the same code and prompts as the site (assets/js/llm/denetim.js +
+// data/kimyager_istem.json). The lab call is streamed and its effort is xhigh, as measured in
+// literature/xai_llm_rag/kimyager_raporu/yerel_llm_deney_sonuclari_2026-10-22.md (report 3.3–10.6 min; the lab proxy cuts
+// unstreamed calls at ~300 s). relay/switch.ps1 turns it on or off.
 //   node relay/server.mjs            (key: LOCAL_LLM_CLIENT_KEY, else read from ~/.omp/agent/.env;
-//                                     lab address LAB_LLM_URL and Turnstile secret TURNSTILE_SECRET: environment, else
-//                                     relay/.env, which stays on the PC: .gitignore)
+//                                     MAILBOX_URL, PC_SECRET, LAB_LLM_URL: environment, else relay/.env, which stays on
+//                                     the PC: .gitignore)
 
-import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { pyJson } from "../assets/js/llm/kanit.js";
 import { mesajRapor, mesajSoru, duzeltme } from "../assets/js/llm/denetim.js";
 
-const PORT = Number(process.env.PORT ?? 8788);
 try { process.loadEnvFile(join(import.meta.dirname, ".env")); } catch {}
-const LLM = process.env.LAB_LLM_URL;
-if (!LLM) { console.error("No LAB_LLM_URL (environment or relay/.env)."); process.exit(1); }
-const HUMAN = process.env.TURNSTILE_SECRET;         // Cloudflare Turnstile secret: every request carries a token from the site
-if (!HUMAN) { console.error("No TURNSTILE_SECRET (environment or relay/.env)."); process.exit(1); }
+const need = (name) => process.env[name] || (console.error(`No ${name} (environment or relay/.env).`), process.exit(1));
+const MAILBOX = need("MAILBOX_URL"), SECRET = need("PC_SECRET"), LLM = need("LAB_LLM_URL");
 const MODEL = "local-llm", EFFORT = process.env.LAB_LLM_EFFORT ?? "xhigh";
-const ORIGINS = ["https://eng-peak-deconvolution-team2.github.io", "http://127.0.0.1:8765", "http://localhost:8765"];
-const MAX_BODY = 80000, MAX_Q = 600, MAX_TEXT = 4000, MAX_ONCEKI = 2;
-const RATE = 4, PERIOD = 60000;                     // 4 reports per minute per IP address
-const BUSY = 2;                                     // lab calls at once from this server, whatever the IPs
-const TIMEOUT = 1800000, BEAT = 15000;              // whole stream, as rapor.py; keep-alive space
+const BUSY = 2;                                     // lab calls at once (the mailbox holds the same limit)
+const POLL = 3000, BEAT = 15000, TIMEOUT = 1800000; // ask for work; report progress; whole stream, as rapor.py
 
 const istem = JSON.parse(readFileSync(new URL("../data/kimyager_istem.json", import.meta.url), "utf8"));
 const envKey = () => {
@@ -40,44 +34,15 @@ const envKey = () => {
 const KEY = process.env.LOCAL_LLM_CLIENT_KEY || envKey();
 if (!KEY) { console.error("No LOCAL_LLM_CLIENT_KEY (environment or ~/.omp/agent/.env)."); process.exit(1); }
 
-const cors = (origin) => ({
-  "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "content-type, ngrok-skip-browser-warning", "Access-Control-Max-Age": "86400", Vary: "Origin",
-});
-const str = (x, max) => typeof x === "string" && x.trim().length > 0 && x.length <= max;
-
-/** The request must look like the analyzer's: a four-decision evidence file of the chemist report, short texts. */
-function invalid(b) {
-  const k = b?.kanit;
-  if (!["rapor", "soru"].includes(b?.kind)) return "kind";
-  if (!k || typeof k !== "object" || !String(k.kanit_dosyasi_surumu ?? "").startsWith("kimyager_raporu")) return "evidence file";
-  if (!Array.isArray(k.kararlar) || k.kararlar.length !== 4 || Object.keys(k.analitler ?? {}).length !== 4) return "decisions";
-  if (b.kind === "soru" && (!str(b.soru, MAX_Q) || !str(b.rapor, MAX_TEXT))) return "question";
-  if (!Array.isArray(b.onceki ?? []) || (b.onceki ?? []).length > MAX_ONCEKI) return "attempts";
-  if ((b.onceki ?? []).some((o) => !str(o?.metin, MAX_TEXT) || !Array.isArray(o.bulgu) || o.bulgu.some((x) => !str(x, 300)))) return "attempt shape";
-  return null;
-}
-
-const calls = new Map();
-let busy = 0;
-function limited(ip) {
-  const now = Date.now(), recent = (calls.get(ip) ?? []).filter((t) => now - t < PERIOD);
-  calls.set(ip, recent);
-  if (recent.length >= RATE) return true;
-  recent.push(now);
-  return false;
-}
-
-/** Cloudflare Turnstile: the browser's single-use token for this request, checked with the secret (fails closed). */
-async function human(token, ip) {
-  if (!str(token, 2048)) return false;
-  try {
-    const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(10000),
-      body: JSON.stringify({ secret: HUMAN, response: token, remoteip: ip }),
-    });
-    return (await r.json()).success === true;
-  } catch { return false; }
+/** One call to the mailbox as the lab PC: the JSON answer, or null for "nothing to do". */
+async function mailbox(path, body) {
+  const res = await fetch(`${MAILBOX}${path}`, {
+    method: "POST", signal: AbortSignal.timeout(15000),
+    headers: { "content-type": "application/json", Authorization: `Bearer ${SECRET}` }, body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 204) return null;
+  if (!res.ok) throw new Error(`mailbox HTTP ${res.status}`);
+  return res.json();
 }
 
 /** The lab model's answer, streamed (as rapor.py's _yerel): { text, finishReason, model, usage }. */
@@ -90,7 +55,7 @@ async function ask(system, mesaj, signal) {
   });
   if (!res.ok) {
     console.error(`lab HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 500)}`);   // the lab's own text stays on the PC
-    throw Object.assign(new Error(`The lab model returned HTTP ${res.status}.`), { status: 502 });
+    throw Object.assign(new Error(`The lab model returned HTTP ${res.status}. Try again in a few minutes.`), { status: 502 });
   }
   let text = "", finishReason, model = MODEL, usage = {}, buf = "";
   const dec = new TextDecoder();
@@ -112,60 +77,51 @@ async function ask(system, mesaj, signal) {
   return { text: text.trim(), finishReason, model, usage };
 }
 
-createServer(async (req, res) => {
-  const t0 = Date.now();
-  const origin = req.headers.origin;
-  const allowed = ORIGINS.includes(origin);
-  // ngrok appends the address it saw; earlier entries come from the client and can be forged
-  const ip = String(req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? "unknown").split(",").at(-1).trim();
-  const log = (status, payload) => console.log(`${new Date().toISOString()} ${ip} ${status} ${((Date.now() - t0) / 1000).toFixed(1)} s`
-    + (payload.error ? ` ${payload.error.message}` : ` ${payload.usage?.completion_tokens ?? "?"} tokens`));
-  const fail = (status, message) => {
-    const payload = { error: { code: status, message } };
-    res.writeHead(status, { "content-type": "application/json", ...(allowed ? cors(origin) : {}) });
-    res.end(JSON.stringify(payload));
-    if (req.method === "POST") log(status, payload);
-  };
-  if (req.method === "OPTIONS") { res.writeHead(allowed ? 204 : 403, allowed ? cors(origin) : {}); res.end(); return; }
-  if (req.method !== "POST" || new URL(req.url, "http://x").pathname !== "/generate") return fail(404, "Not found");
-  if (!allowed) return fail(403, "This origin may not use the report server.");
-  if (limited(ip)) return fail(429, "Too many reports from this address; wait a minute.");
-  let raw = "";
-  for await (const chunk of req) {
-    raw += chunk;
-    if (raw.length > MAX_BODY) return fail(413, "Request too large.");
-  }
-  let body;
-  try { body = JSON.parse(raw); } catch { return fail(400, "Request is not JSON."); }
-  const why = invalid(body);
-  if (why) return fail(400, `Not an analyzer request (${why}).`);
-  const rapor = body.kind === "rapor";
-  let mesaj;
-  try {                                             // a crafted file (e.g. nested 20,000 deep) must not stop the server
-    const kanit = pyJson(rapor ? { ...body.kanit, soru: null } : { ...body.kanit, soru: body.soru });
-    mesaj = rapor ? mesajRapor(kanit) : mesajSoru(kanit, body.rapor, body.soru);
-    for (const o of body.onceki ?? []) mesaj += duzeltme(o.metin, o.bulgu, rapor ? 5 : 4);
-  } catch { return fail(400, "Not an analyzer request (evidence file)."); }
-  if (!(await human(body.insan, ip))) return fail(403, "The human check did not pass; reload the page and try again.");
-  if (busy >= BUSY) return fail(503, "The report server is busy with other reports.");
+let running = 0;
 
-  // From here the status is 200 and errors travel in the JSON body; a visitor who leaves stops the lab call.
-  busy++;
-  res.writeHead(200, { "content-type": "application/json", ...cors(origin) });
-  const beat = setInterval(() => res.write(" "), BEAT);
-  const left = new AbortController();
-  res.on("close", () => { if (!res.writableEnded) left.abort(); });
+/** One request: the message, the lab's answer, the answer back to the mailbox; a visitor who left stops the lab call. */
+async function run(job) {
+  running++;
+  const t0 = Date.now(), rapor = job.kind === "rapor", left = new AbortController();
+  const beat = setInterval(() => mailbox(`/pc/beat/${job.id}`).then((r) => r?.cancel && left.abort(), () => {}), BEAT);
   let payload;
   try {
+    let mesaj;
+    try {                                           // a crafted file (e.g. nested 20,000 deep) must not stop the server
+      const kanit = pyJson(rapor ? { ...job.kanit, soru: null } : { ...job.kanit, soru: job.soru });
+      mesaj = rapor ? mesajRapor(kanit) : mesajSoru(kanit, job.rapor, job.soru);
+      for (const o of job.onceki ?? []) mesaj += duzeltme(o.metin, o.bulgu, rapor ? 5 : 4);
+    } catch { throw Object.assign(new Error("Not an analyzer request (evidence file)."), { status: 400 }); }
     payload = await ask(rapor ? istem.rapor : istem.soru, mesaj, AbortSignal.any([left.signal, AbortSignal.timeout(TIMEOUT)]));
-    if (!payload.text) payload = { error: { code: 502, message: `The lab model returned no text (finish reason: ${payload.finishReason ?? "unknown"}).` } };
+    if (!payload.text) payload = { error: { code: 502, message: `The lab model returned no text (finish reason: ${payload.finishReason ?? "unknown"}). Try again in a few minutes.` } };
   } catch (err) {
     const message = left.signal.aborted ? "The visitor left before the answer."
-      : err.name === "TimeoutError" ? "The lab model did not answer in time." : err.status ? err.message : "The lab model could not be reached.";
+      : err.name === "TimeoutError" ? "The lab model did not answer in time. Try again in a few minutes."
+      : err.status ? err.message : "The lab model could not be reached. Try again in a few minutes.";
     payload = { error: { code: err.status ?? 504, message } };
   }
-  busy--;
   clearInterval(beat);
-  res.end(JSON.stringify(payload));
-  log(payload.error ? payload.error.code : 200, payload);
-}).listen(PORT, "127.0.0.1", () => console.log(`VoltEPIC report server on http://localhost:${PORT}/generate → ${LLM} (${MODEL}, ${EFFORT})`));
+  for (let i = 0; i < 3; i++) {                     // the answer is worth a few tries
+    try { await mailbox(`/pc/done/${job.id}`, payload); break; } catch { await sleep(5000); }
+  }
+  running--;
+  console.log(`${new Date().toISOString()} ${job.id.slice(0, 8)} ${job.kind} ${payload.error ? payload.error.code : 200} `
+    + `${((Date.now() - t0) / 1000).toFixed(1)} s ${payload.error ? payload.error.message : `${payload.usage?.completion_tokens ?? "?"} tokens`}`);
+}
+
+console.log(`VoltEPIC report server: mailbox ${MAILBOX} → ${LLM} (${MODEL}, ${EFFORT})`);
+for (let down = 0; ;) {                             // ask for work every 3 s; while the mailbox is unreachable, back off to 30 s
+  let job = null;
+  if (running < BUSY) {
+    try {
+      job = await mailbox("/pc/next");
+      if (down) console.log(`${new Date().toISOString()} mailbox reachable again`);
+      down = 0;
+    } catch (err) {
+      if (!down) console.error(`${new Date().toISOString()} mailbox unreachable: ${err.message}`);
+      down++;
+    }
+  }
+  if (job) run(job);
+  else await sleep(Math.min(POLL * 2 ** down, 30000));
+}

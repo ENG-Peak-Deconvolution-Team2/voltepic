@@ -64,19 +64,20 @@ may say is computed first:
    notes. Library curves use `data/kimyager.json` (rapor.py's explanations, exported by `tools/export_kimyager.py`);
    uploads need a blank and the coating (01 · Measurement; the coating is read from the chip name when it is a known
    training chip). The file name, the raw curve and the blank curve are not sent.
-3. **Lab LLM** (`assets/js/llm/relay.js` → `relay/server.mjs`) — the browser sends the evidence file to VoltEPIC's
-   report server, a Node script on the project's lab PC, reached through an ngrok tunnel at the address in `SERVER`
-   (`relay.js`). The server checks that the request is the analyzer's (origin, evidence-file shape, short texts, 4
-   requests a minute per IP, a Cloudflare Turnstile token checked with the secret in `relay/.env`, at most 2 lab calls at
-   once), listens only on 127.0.0.1, builds the message with the same `denetim.js` code and the system prompt of
-   `data/kimyager_istem.json`, and asks the AI-LAB model (`local-llm`, OpenAI-compatible, lab network only) with
-   `reasoning_effort: xhigh`, streamed. No key is in the site; the lab key stays on the PC. While the PC or the tunnel
-   is off, the assistant says the report server is offline; `relay/switch.ps1` turns both on or off. Every page carries a
-   Content-Security-Policy: scripts only from the site and Turnstile, connections only to the site and the tunnel.
-   Measured on this report
+3. **Lab LLM** (`assets/js/llm/relay.js` → `worker/` → `relay/server.mjs`) — the browser leaves the evidence file in
+   VoltEPIC's mailbox, a Cloudflare Worker at the address in `SERVER` (`relay.js`), and asks for the answer every 3 s.
+   The mailbox checks that the request is the analyzer's (origin, evidence-file shape, short texts, a Cloudflare Turnstile
+   token, 4 requests a minute per IP, at most 6 waiting) and keeps it in a Durable Object. The report server, a Node
+   script on the project's lab PC, collects requests over outbound HTTPS with a secret (`PC_SECRET`), at most 2 at once;
+   it builds the message with the same `denetim.js` code and the system prompt of `data/kimyager_istem.json`, asks the
+   AI-LAB model (`local-llm`, OpenAI-compatible, lab network only) with `reasoning_effort: xhigh`, streamed, and leaves
+   the answer in the mailbox. Nothing connects to the PC: no port is opened and no tunnel runs. No key is in the site;
+   the lab key stays on the PC. While the PC is off, the mailbox tells the site the report server is offline;
+   `relay/switch.ps1` turns it on or off. A visitor who stops asking for 60 s has left, and the lab call is stopped.
+   Every page carries a Content-Security-Policy: scripts only from the site and Turnstile, connections only to the site
+   and the mailbox. Measured on this report
    (`literature/xai_llm_rag/kimyager_raporu/yerel_llm_deney_sonuclari_2026-10-22.md`): xhigh 3.3–10.6 min a report;
-   on the 7 inputs where Gemini 3.8 Flash made no wrong claim, 3 of 7 reports had one. `worker/` holds the earlier
-   Gemini Worker (never deployed); the site no longer calls it.
+   on the 7 inputs where Gemini 3.8 Flash made no wrong claim, 3 of 7 reports had one.
 4. **Check** (`assets/js/llm/denetim.js`) — 8 rules on every text: sentence count and length, technical terms, record
    IDs, numbers not in the evidence file, "peak is here" claims, contradicted decisions, scan-edge regions, first person.
    With findings, the model gets one rewrite with them; what is left is listed under the text. The report bubble also shows
@@ -149,20 +150,19 @@ assets/js/pages/           one module per page
 assets/js/io.js            CSV / CHI parsing and resampling
 assets/js/assistant.js     assistant: scripted answers + the Gemini report
 assets/js/llm/             chemist report: kanit (labels, evidence file), denetim (check, messages), gemini, report
-worker/                    Cloudflare Worker: shared Gemini access with the project key (secret)
+worker/                    Cloudflare Worker: the mailbox between the site and the lab PC (README there)
 assets/js/engine/          wavelet transform, model, occlusion, KernelSHAP (shap.js)
 data/model.json            exported model
 data/library.json          held-out curves, metadata, mean blanks, Python reference scores
 data/xai.json              XAI run results for this model: per-curve SHAP (R2), PFI, E3 windows, test numbers
 data/kimyager.json         chemist report: per library curve SHAP / occlusion against the blank, the blank, model-level notes
 data/kimyager_istem.json   chemist report system prompts (report, question)
-data/gemini_key.json       the site's Gemini key, encrypted with the site password
 tools/export_model.py      regenerates model.json / library.json from the research workspace
 tools/export_xai.py        regenerates xai.json; checks that the run's rows and model are the site's
 tools/parity.mjs           JS ↔ Python parity test
 tools/export_kimyager.py   regenerates kimyager.json / kimyager_istem.json (+ --fixture: tools/fixtures/kimyager_parity.json)
 tools/kimyager_parity.mjs  chemist report ↔ rapor.py parity test
-relay/server.mjs           the report server on the lab PC (node relay/server.mjs; relay/switch.ps1 turns it and the tunnel on or off)
+relay/server.mjs           the report server on the lab PC: collects requests from the mailbox (relay/switch.ps1 turns it on or off)
 ```
 
 No build step: any static server works (`python -m http.server`), and GitHub Pages serves `main`.

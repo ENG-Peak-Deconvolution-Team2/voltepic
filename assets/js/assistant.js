@@ -76,7 +76,8 @@ export function createAssistant({ log, suggest, form, input, ctx, actions, modeS
   const llmIntro = () => `Lab LLM mode: ask for the <b>chemist report</b>, then ask follow-up questions. Answers are in Turkish, built only from `
     + `this analysis's evidence file (decisions, basis labels, regions against the blank, peak windows), and code checks every text. `
     + `A report takes about 3–11 minutes. The evidence file (chip name included; never the raw curve, the blank curve or the file name) `
-    + `goes through an ngrok tunnel to VoltEPIC's report server on the project's lab PC, which asks the AI-LAB model on the lab network. `
+    + `waits in VoltEPIC's mailbox on Cloudflare until the report server on the project's lab PC collects it and asks the AI-LAB `
+    + `model on the lab network; keep this page open until the answer arrives. `
     + `Before each request, Cloudflare Turnstile checks that a person is asking; it may show a box to click.`;
 
   async function ask(question, intent) {

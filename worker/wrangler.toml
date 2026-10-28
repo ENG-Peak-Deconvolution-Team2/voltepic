@@ -1,10 +1,19 @@
-# VoltEPIC shared Gemini access (Cloudflare Worker). The key is a secret, never in this file:
-#   npx wrangler@4 secret put GEMINI_API_KEY      (from this folder, after `npx wrangler@4 login`)
+# VoltEPIC's mailbox for the chemist report (see src/index.js). Secrets are never in this file:
+#   npx wrangler@4 secret put TURNSTILE_SECRET     (from this folder, after `npx wrangler@4 login`)
+#   npx wrangler@4 secret put PC_SECRET            (the same value as PC_SECRET in relay/.env on the lab PC)
 #   npx wrangler@4 deploy
-name = "voltepic-gemini"
+name = "voltepic-relay"
 main = "src/index.js"
 compatibility_date = "2025-10-01"
 workers_dev = true
+
+[[durable_objects.bindings]]
+name = "KUYRUK"
+class_name = "Kuyruk"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Kuyruk"]
 
 # 4 reports per minute per IP address
 [[ratelimits]]
