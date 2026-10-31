@@ -15,7 +15,8 @@ What it checks:
   local testing); only the analyzer's chemist-report evidence file (version `chemist_report…`, four decisions, four
   analyte branches; a question ≤ 600 characters, the report given ≤ 4,000, at most 2 earlier attempts), ≤ 80 KB; a
   Cloudflare Turnstile token checked with `TURNSTILE_SECRET`; 4 requests a minute per IP (`CF-Connecting-IP`); at most
-  6 requests waiting. Origin can be forged outside a browser; the token and the limits carry the weight.
+  6 requests waiting; **one chemist report an hour for the whole site**: the report's request opens the hour and gets a session id, and
+  its rewrite, a rewrite of the report and the questions on it (at most 5 calls) must carry it. Origin can be forged outside a browser; the token and the limits carry the weight.
 - **The lab PC**: `Authorization: Bearer <PC_SECRET>`, compared in constant time.
 - **Timing**: the PC asks every 3 s; silent for 20 s it is off and new requests get the offline message. A visitor who
   stops asking for 60 s has left: a waiting request is removed, a running one is stopped by the PC's next progress report

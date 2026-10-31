@@ -70,7 +70,8 @@ everything it may say is computed first:
 3. **Lab LLM** (`assets/js/llm/relay.js` → `worker/` → `relay/server.mjs`) — the browser leaves the evidence file in
    VoltEPIC's mailbox, a Cloudflare Worker at the address in `SERVER` (`relay.js`), and asks for the answer every 3 s.
    The mailbox checks that the request is the analyzer's (origin, evidence-file shape, short texts, a Cloudflare Turnstile
-   token, 4 requests a minute per IP, at most 6 waiting) and keeps it in a Durable Object. The report server, a Node
+   token, 4 requests a minute per IP, at most 6 waiting, one report an hour for the whole site with up to 5 follow-up
+   calls on it) and keeps it in a Durable Object. The report server, a Node
    script on the project's lab PC, collects requests over outbound HTTPS with a secret (`PC_SECRET`), at most 2 at once;
    it builds the message with the same `check.js` code and the system prompt of `data/chemist_prompts.json`, asks the
    AI-LAB model (`local-llm`, OpenAI-compatible, lab network only) with `reasoning_effort: xhigh`, streamed, and leaves

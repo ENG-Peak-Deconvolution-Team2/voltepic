@@ -64,6 +64,10 @@ async function call(path, init, signal) {
   return body;
 }
 
+/** The mailbox allows one chemist report an hour for the whole site; its session id lets this page add the rewrite and
+ *  the follow-up questions within that hour. */
+let session = null;
+
 /** One call: the lab PC builds the message from the evidence file ("rapor" or "soru"), the report given, the question and
  *  the earlier attempts' check findings → { text, finishReason, modelVersion, usage, ms }. The request waits in the
  *  mailbox until the PC collects it; the site asks for the answer every 3 s, and leaving the page withdraws it. */
@@ -71,8 +75,9 @@ export async function generate({ kind, kanit, rapor, soru, onceki, signal }) {
   if (!server()) throw new Error(OFFLINE);
   const t0 = performance.now();
   const insan = await humanToken();
-  const { id } = await call("/jobs", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind, kanit, rapor, soru, onceki, insan }) }, signal);
+  const { id, session: s } = await call("/jobs", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, kanit, rapor, soru, onceki, insan, session }) }, signal);
+  session = s ?? session;
   try {
     for (let misses = 0; ;) {
       await wait(POLL, signal);

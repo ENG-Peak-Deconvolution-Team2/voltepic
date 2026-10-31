@@ -10,6 +10,7 @@ import { DurableObject } from "cloudflare:workers";
 const ORIGINS = ["https://eng-peak-deconvolution-team2.github.io", "http://127.0.0.1:8765", "http://localhost:8765"];
 const MAX_BODY = 80000, MAX_Q = 600, MAX_TEXT = 4000, MAX_ONCEKI = 2;
 const BUSY = 2, LINE = 6;                           // lab calls at once; requests waiting at most
+const USES = 5;                                     // calls a report's holder may add within its hour (rewrite, questions)
 const PC_GONE = 20000;                              // the PC asks every 3 s; silent this long = off
 const VISITOR_GONE = 60000;                         // the site asks every 3 s; silent this long = left
 const LAB_GONE = 90000;                             // the PC reports every 15 s while the lab writes
@@ -91,7 +92,7 @@ export default {
       if (why) return fail(400, `Not an analyzer request (${why}).`, origin);
       if (!(await human(body.insan, ip, env))) return fail(403, "The human check did not pass; reload the page and try again.", origin);
       const { kind, kanit, rapor, soru, onceki } = body;
-      const out = await box.add({ kind, kanit, rapor, soru, onceki });
+      const out = await box.add({ kind, kanit, rapor, soru, onceki }, str(body.session, 64) ? body.session : null, Number(env.HOUR_MS ?? 3600000));
       return out.error ? json(out, out.error.code, origin) : json(out, 202, origin);
     }
     if (jobId && path.startsWith("/jobs/") && req.method === "GET") {
@@ -124,15 +125,28 @@ export class Kuyruk extends DurableObject {
 
   async status() { const now = Date.now(); return { pc: now - (await this.sweep(now)) < PC_GONE }; }
 
-  async add(body) {
+  /** One chemist report an hour for the whole site. The report's request opens the hour and gets a session id; its rewrite,
+   *  a "rewrite the report" and the questions on it carry that id, USES calls at most. */
+  async add(body, session, hour) {
     const now = Date.now();
     if (now - (await this.sweep(now)) >= PC_GONE) return { error: { code: 503, message: OFFLINE } };
-    if ((await this.jobs()).filter((j) => j.status === "waiting").length >= LINE) {
+    let h = (await this.ctx.storage.get("hour")) ?? { start: 0 };
+    const left = Math.ceil((h.start + hour - now) / 60000);
+    if (h.session && session === h.session && left > 0) {
+      if (h.uses >= USES) return { error: { code: 429, message: `This report's follow-up questions are used up. VoltEPIC writes one chemist report an hour; the next one is possible in ${left} min.` } };
+      h = { ...h, uses: h.uses + 1 };
+    } else if (body.kind !== "rapor" || (body.onceki ?? []).length) {
+      return { error: { code: 409, message: "This question belongs to an earlier report, whose hour is over. Write a new report first." } };
+    } else if (left > 0) {
+      return { error: { code: 429, message: `VoltEPIC writes one chemist report an hour, for all visitors together; the next one is possible in ${left} min.` } };
+    } else h = { session: crypto.randomUUID(), start: now, uses: 0 };
+    if ((await this.jobs()).filter((j) => j.status === "waiting").length >= LINE) {   // before the hour is spent
       return { error: { code: 503, message: "The report server is busy with other reports. Try again in a few minutes." } };
     }
+    await this.ctx.storage.put("hour", h);
     const job = { id: crypto.randomUUID(), status: "waiting", body, created: now, seen: now };
     await this.save(job);
-    return { id: job.id };
+    return { id: job.id, session: h.session };
   }
 
   async look(id) {
